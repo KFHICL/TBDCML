@@ -1,0 +1,418 @@
+##############################################################################
+######################## TBDC CNN TRAINING ON HPC  ###########################
+##############################################################################
+
+import sys
+
+import os
+import random
+import time
+import math
+import datetime
+import shutil
+import json
+import scipy
+import tensorflow as tf
+import sklearn
+from sklearn import preprocessing
+import sklearn.model_selection
+from sklearn.preprocessing import StandardScaler
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+
+import argparse
+
+# Add arguments for parallel running and training of several different models 
+argParser = argparse.ArgumentParser()
+
+argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
+args = argParser.parse_args()
+sweepIdx = args.parallel
+
+# Sweep parameters
+# Batch size
+# Train/val ratio
+
+sweepPath = os.path.join('IndividualProject','CNNTraining','sweep_definitions.csv')
+sweep_params = pd.read_csv(sweepPath)
+params = sweep_params.loc[sweepIdx]
+
+
+numSamples = 100
+batchSize = params['batchSize'] # We have 100 images
+trainValRatio = params['trainValRatio']
+train_length = round(numSamples * trainValRatio)
+epochs = 5
+steps_per_epoch = train_length // batchSize
+validation_steps = (100-train_length) // batchSize
+
+# params = 
+
+
+# For reproducible results
+seed = 0
+tf.random.set_seed(seed)
+
+
+
+timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M")
+histOutName = 'trainHist_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+histOutPath = os.path.join('dataout',histOutName)
+predOutName = 'predictions_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+predOutPath = os.path.join('dataout',predOutName)
+gtOutName = 'groundTruth_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+gtOutPath = os.path.join('dataout',gtOutName)
+paramOutName = 'parameters_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+paramOutPath = os.path.join('dataout',paramOutName)
+
+
+
+############################### Data functions ###################################
+
+def loadSample(path = str):
+  '''
+  Imports data in csv and formats into a tensor
+  '''
+  # Read sample csv data
+  sample = pd.read_csv(path)
+  headers = sample.columns.values.tolist()
+  values = np.array(sample)
+
+  coords = [[x for x in values[:,1][y].split(' ') if x] for y in range(len(values[:,1]))] # Split coordinates by delimiter (space)
+  coords = [np.char.strip(x, '[') for x in coords] # Coordinate output from abaqus has leading "["
+  coords = [[x for x in coords[y] if x] for y in range(len(values[:,1]))] # remove empty array elements
+  coords = np.array([[float(x) for x in coords[y][0:2]] for y in range(len(values[:,1]))]) # Take 2d coordinates and convert to float
+
+
+  values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+  # values = values.astype(np.float)
+
+  headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+
+  return headers, values
+
+
+
+
+def normalise(input_matrix) -> tuple:
+    '''
+    Normalise values in matrix to lie between 0 and 1
+
+    Args
+    ----------
+    input_matrix : np.array
+        Numpy array of data in shape [55,20,14]
+        OR
+        Numpy array of data in shape [1100,14] if not reshaped
+        There are 11 features which are each normalised, features 1, 2, and 3 are labels and x/y coordinates
+
+    Returns
+    ----------
+    tuple
+        Normalised array
+    '''
+
+    scaler = preprocessing.StandardScaler()
+    if len(np.shape(input_matrix)) == 3:
+      scaler.fit(input_matrix[:,:,3:])
+      input_matrix[:,:,3:] = scaler.transform(input_matrix[:,:,3:])
+    elif len(np.shape(input_matrix)) == 2:
+      scaler.fit(input_matrix[:,3:])
+      input_matrix[:,3:] = scaler.transform(input_matrix[:,3:])
+    else:
+        raise Exception("Data to be normalised not of correct shape")
+
+
+    # for i in range(3, 14):
+    #   if len(np.shape(input_matrix)) == 3:
+    #     input_matrix[:,:,i] = preprocessing.scale(input_matrix[:,:,i], axis=0, copy=True)
+    #   elif len(np.shape(input_matrix)) == 2:
+    #     input_matrix[:,i] = preprocessing.scale(input_matrix[:,i], axis=0, copy=True)
+    #   else:
+    #     raise Exception("Data to be normalised not of correct shape")
+
+
+
+    return input_matrix, scaler
+
+
+
+
+
+def show_prediction(sample, predictions, names, ground_truth, grid):
+  '''
+  For a given dataset plots one image, its true mask, and predicted mask
+
+  Args
+  ----------
+  sample: the 55x20x3 input
+  prediction: the predicted field
+  ground_truth: the ground truth field
+
+  Returns
+  ----------
+  Nothing, graph will be displayed
+
+  '''
+  # Plot  inputs
+  fig, axs = plt.subplots(1, sample.shape[-1],figsize=[10,5]) # Create subplots to fit input fields
+  for i in range(sample.shape[-1]):
+    ax = plt.subplot(1, sample.shape[-1], i+1)
+    CS = ax.contourf(grid[0],grid[1],sample[:,:,i], cmap = 'jet')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    # plt.title(testHeaders[i])
+    fig.colorbar(CS)
+    plt.title('input'+str(i+1))
+
+  # Plot outputs
+  fig, axs = plt.subplots(1, len(names)+1,figsize=[5*len(names), 5]) # Create subplots to fit output fields
+
+  ax = plt.subplot(1, len(names)+1, 1)
+  CS = ax.contourf(grid[0],grid[1],ground_truth, cmap = 'jet')
+  plt.xlabel('x')
+  plt.ylabel('y')
+  fig.colorbar(CS)
+  plt.title('ground truth')
+
+  for idx, pred in enumerate(predictions):
+    ax = plt.subplot(1, len(names)+1, idx+2)
+    CS2 = ax.contourf(grid[0],grid[1],predictions[idx], cmap = 'jet', levels = CS.levels)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    fig.colorbar(CS2)
+    plt.title(names[idx])
+
+
+
+############################### Data preprocessing ############################################
+# Import all data samples
+
+for i in range(numSamples):
+  path = 'datain/Unnotched_TBDC_2022_'+str(i)+'.csv'
+  if i==0:
+    headers, samples = loadSample(path)
+    samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
+  else:
+    addSamp = loadSample(path)[1]
+    samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
+
+samples, scaler = normalise(samples.reshape(samples.shape[0]*samples.shape[1],samples.shape[2])) # retain the scaler parameters such that inverse scaling can be done
+samples = samples.reshape(numSamples,-1,samples.shape[-1])
+# Reshape sample variable to have shape (samples, row, column, features)
+samples2D = samples.reshape(numSamples,55,20,14)
+
+
+
+
+
+############################# ML training Settings and dataset preprocessing ###########################################
+
+# Reminder: the header index is the following
+# [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
+# ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
+
+
+
+# e22_ds = samples2D[:,:,:,[11,12,13,4]] # For first experiment take stiffness matrix and attempt to predict vertical strain
+X = samples2D[:,:,:,[11,12,13]]  # Input data is always stiffness components
+
+ye11 = samples2D[:,:,:,3] # Labels for horizontal strain
+ye22 = samples2D[:,:,:,4] # Labels for vertical strain
+yS11 = samples2D[:,:,:,6] # Labels for horizontal stress
+yS22 = samples2D[:,:,:,7] # Labels for vertical stress
+ymises = samples2D[:,:,:,9] # Labels for mises stress
+yFI = samples2D[:,:,:,10] # Labels for failure index
+
+# Create tensor datasets
+ds_e22 = tf.data.Dataset.from_tensor_slices((X, ye22))
+ds_FI = tf.data.Dataset.from_tensor_slices((X, yFI))
+
+# Split into training and validation datasets
+train_ds_e22 = ds_e22.take(train_length)
+val_ds_e22 = ds_e22.skip(train_length)
+train_ds_FI = ds_FI.take(train_length)
+val_ds_FI = ds_FI.skip(train_length)
+
+# Training dataset preprocessing
+train_ds_e22 = train_ds_e22.cache() # cache dataset for it to be used over iterations
+train_ds_e22 = train_ds_e22.shuffle(buffer_size=1000).batch(batchSize)
+train_ds_e22 = train_ds_e22.repeat() # Repeats dataset indefinitely to avoid errors
+train_ds_e22 = train_ds_e22.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
+
+train_ds_FI = train_ds_FI.cache() # cache dataset for it to be used over iterations
+train_ds_FI = train_ds_FI.shuffle(buffer_size=1000).batch(batchSize)
+train_ds_FI = train_ds_FI.repeat() # Repeats dataset indefinitely to avoid errors
+train_ds_FI = train_ds_FI.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
+
+# Validation dataset preprocessing
+val_ds_e22 = val_ds_e22.cache() # cache dataset for it to be used over iterations
+val_ds_e22 = val_ds_e22.shuffle(buffer_size=1000).batch(batchSize)
+val_ds_e22 = val_ds_e22.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
+
+val_ds_FI = val_ds_FI.cache() # cache dataset for it to be used over iterations
+val_ds_FI = val_ds_FI.shuffle(buffer_size=1000).batch(batchSize)
+val_ds_FI = val_ds_FI.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
+
+# The below are just used for validation and shape (TODO: replace validation method with tf tensors)
+X_train_e22, X_val_e22, y_train_e22, y_val_e22 = sklearn.model_selection.train_test_split(X, ye22, train_size=trainValRatio)
+X_train_FI, X_val_FI, y_train_FI, y_val_FI = sklearn.model_selection.train_test_split(X, yFI, train_size=trainValRatio)
+
+# Get shapes for later use
+train_in_shape = X_train_e22.shape
+val_in_shape = X_val_e22.shape
+train_out_shape = y_train_e22.shape
+val_out_shape = y_val_e22.shape
+
+
+
+
+################################################## CNN Model definition #####################################################
+
+def TBDCNet_modelCNN(inputShape, outputShape, params):
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
+  x = input
+  # x = tf.keras.layers.LayerNormalization()(x)
+  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['convActivation'], data_format='channels_last', padding='same') (x)
+  if params['pooling'] == 1:
+    x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+  if params['dropout'] == 1:
+    x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+
+  if params['layer2'] == 1:
+    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(3, 3),activation='tanh', data_format='channels_last', padding='same') (x)
+    if params['pooling'] == 1:
+       x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+    if params['dropout'] == 1:
+       x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+        
+    if params['layer3'] == 2:
+        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(3, 3),activation='tanh', data_format='channels_last', padding='same') (x)
+        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+        x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+
+  # x = tf.keras.layers.LayerNormalization()(x) # Normalisation still to be considered TODO - may be negative for XAI, and also not needed since scale of strains is similar....
+
+        x = tf.keras.layers.Conv2DTranspose(filters = 64, kernel_size = 3,  padding='same')(x)
+
+    x = tf.keras.layers.Conv2DTranspose(filters = 32, kernel_size = 3,  padding='same')(x)
+
+  x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = 3,  padding='same')(x)
+
+  output = x
+
+  model = tf.keras.Model(inputs=input, outputs=output)
+
+  # Default initial learning rate is 0.001
+  # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+  #   initial_learning_rate=0.005,
+  #   decay_steps=steps_per_epoch*epochs, # Such that "decay_rate" is the factor multiplied onto the initial rate at the end of training
+  #   decay_rate=0.1)
+
+  lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=0.001,
+    decay_steps=steps_per_epoch*epochs,
+    decay_rate=1)
+
+  model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule), # Compile
+              loss='MeanSquaredError', #custom_sigmoid_focal_crossentropy,custom_SparseCategoricalCrossentropy
+              metrics=['mean_squared_error'])
+
+
+  return model
+
+
+
+
+############################################ Callbacks ###########################################
+
+checkpoint_path = "training_checkpoints/cp.ckpt"
+checkpoint_dir = os.path.dirname(checkpoint_path)
+
+try:
+  os.mkdir(checkpoint_dir) # Make checkpoint directory
+except:
+  pass
+
+# CHECKPOINT CALLBACK
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path+'2',
+                                                 save_weights_only=True,
+                                                 save_best_only = True,
+                                                 monitor = 'val_loss',
+                                                 verbose=1)
+
+early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
+    monitor='loss',
+    min_delta=0,
+    patience=40,
+    verbose=0,
+    mode='auto',
+    baseline=None,
+    restore_best_weights=True
+)
+
+
+############################################## Model definition ################################################
+
+tf.keras.backend.clear_session() # Clear the state and frees up memory
+
+# CNN MODEL DEFININTION
+modelCNN = TBDCNet_modelCNN(inputShape = train_in_shape[1:], outputShape = train_out_shape[1:], params = params)
+modelCNNname = 'CNNModel1'
+
+
+
+############################################### Scaler values for inverse transformation ########################
+means = scaler.mean_
+std = np.sqrt(scaler.var_)
+
+
+
+########################################## Model training ##################################################
+
+# Fit model to Failure index
+modelCNN_history = modelCNN.fit(train_ds_FI,
+                                epochs=epochs,
+                                steps_per_epoch=steps_per_epoch,
+                                validation_data=val_ds_FI,
+                                validation_steps = validation_steps,
+                                callbacks=[early_stopping_monitor]
+                                )
+
+
+
+######################################### Performance evaluation ##############################################
+
+predCNN = modelCNN.predict(X) # Make prediction
+predCNN_val = modelCNN.predict(X_val_FI) # Prediction of only validation data
+
+# Inverse standardisation and reshaping for performance outputting
+predCNN_invStandard = predCNN[:,:,:,0]*std[7]+means[7] # Inverse standardisation
+predCNN_val_invStandard = predCNN_val[:,:,:,0]*std[7]+means[7] # Inverse standardisation
+
+ground_truth_invStandard = yFI*std[7]+means[7]
+ground_truth_val_invStandard = y_val_FI*std[7]+means[7]
+
+trainingHist = modelCNN_history.history
+
+with open(histOutPath, 'w') as f: # Dump data to json file at specified path
+    json.dump(trainingHist, f, indent=2)
+
+with open(predOutPath, 'w') as f: # Dump data to json file at specified path
+    json.dump(predCNN_invStandard.tolist(), f, indent=2)
+
+with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
+    json.dump(params.to_json(), f, indent=2)
+
+
+# predCNN_invStandard_reshape = predCNN_invStandard.reshape(ground_truth_invStandard.shape)
+# predCNN_val_invStandard_reshape = predCNN_val_invStandard.reshape(ground_truth_val_invStandard.shape)
+
+# RMSECNNFI = tf.keras.metrics.RootMeanSquaredError() # CNN
+# RMSECNNFI.update_state(ground_truth_invStandard,predCNN_invStandard_reshape)
+
+# RMSECNNFI_val = tf.keras.metrics.RootMeanSquaredError() # CNN
+# RMSECNNFI_val.update_state(ground_truth_val_invStandard,predCNN_val_invStandard_reshape)
