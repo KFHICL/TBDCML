@@ -29,15 +29,18 @@ import argparse
 argParser = argparse.ArgumentParser()
 
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
+argParser.add_argument("-j", "--jobname", help="Job name") # Name of job passed when calling script
+
 args = argParser.parse_args()
-sweepIdx = args.parallel
+sweepIdx = int(args.parallel)
 
 # Sweep parameters
 # Batch size
 # Train/val ratio
 
-sweepPath = os.path.join('IndividualProject','CNNTraining','sweep_definitions.csv')
+sweepPath = 'sweep_definition_fineTune.csv'
 sweep_params = pd.read_csv(sweepPath)
+sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
 
 
@@ -45,12 +48,9 @@ numSamples = 100
 batchSize = params['batchSize'] # We have 100 images
 trainValRatio = params['trainValRatio']
 train_length = round(numSamples * trainValRatio)
-epochs = 5
+epochs = 500
 steps_per_epoch = train_length // batchSize
-validation_steps = (100-train_length) // batchSize
-
-# params = 
-
+validation_steps = math.ceil((100-train_length) / batchSize)
 
 # For reproducible results
 seed = 0
@@ -59,16 +59,16 @@ tf.random.set_seed(seed)
 
 
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M")
-histOutName = 'trainHist_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
 histOutPath = os.path.join('dataout',histOutName)
-predOutName = 'predictions_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+predOutName = 'predictions_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
 predOutPath = os.path.join('dataout',predOutName)
-gtOutName = 'groundTruth_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+gtOutName = 'groundTruth_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
 gtOutPath = os.path.join('dataout',gtOutName)
-paramOutName = 'parameters_{ts}_{num}.json'.format(ts=timeStamp, num = args.parallel) # Naming of file out
+paramOutName = 'parameters_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
 paramOutPath = os.path.join('dataout',paramOutName)
-
-
+inputOutName = 'input_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+inputOutPath = os.path.join('dataout',inputOutName)
 
 ############################### Data functions ###################################
 
@@ -232,7 +232,7 @@ ds_e22 = tf.data.Dataset.from_tensor_slices((X, ye22))
 ds_FI = tf.data.Dataset.from_tensor_slices((X, yFI))
 
 # Split into training and validation datasets
-train_ds_e22 = ds_e22.take(train_length)
+train_ds_e22 = ds_e22.take(train_length) # Currently not shuffling beforehand, should be done in the future TODO
 val_ds_e22 = ds_e22.skip(train_length)
 train_ds_FI = ds_FI.take(train_length)
 val_ds_FI = ds_FI.skip(train_length)
@@ -244,7 +244,7 @@ train_ds_e22 = train_ds_e22.repeat() # Repeats dataset indefinitely to avoid err
 train_ds_e22 = train_ds_e22.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
 
 train_ds_FI = train_ds_FI.cache() # cache dataset for it to be used over iterations
-train_ds_FI = train_ds_FI.shuffle(buffer_size=1000).batch(batchSize)
+train_ds_FI = train_ds_FI.shuffle(buffer_size=1000).batch(batchSize) # Shuffle for random order
 train_ds_FI = train_ds_FI.repeat() # Repeats dataset indefinitely to avoid errors
 train_ds_FI = train_ds_FI.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
 
@@ -276,25 +276,35 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
   x = input
   # x = tf.keras.layers.LayerNormalization()(x)
-  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['convActivation'], data_format='channels_last', padding='same') (x)
+  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same') (x)
   if params['pooling'] == 1:
     x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
-  if params['dropout'] == 1:
-    x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+  if params['dropout'] > 0:
+    x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
 
   if params['layer2'] == 1:
-    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(3, 3),activation='tanh', data_format='channels_last', padding='same') (x)
+    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(params['layer2Kernel'], params['layer2Kernel']),activation=params['conv2Activation'], data_format='channels_last', padding='same') (x)
     if params['pooling'] == 1:
        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
-    if params['dropout'] == 1:
-       x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+    if params['dropout'] > 0:
+       x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         
-    if params['layer3'] == 2:
-        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(3, 3),activation='tanh', data_format='channels_last', padding='same') (x)
-        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
-        x = tf.keras.layers.SpatialDropout2D(rate = 0.1)(x)
+    if params['layer3'] == 1:
+        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(params['layer3Kernel'], params['layer3Kernel']),activation=params['conv3Activation'], data_format='channels_last', padding='same') (x)
+        if params['pooling'] == 1:
+           x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+        if params['dropout'] > 0:
+           x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+        
+        if params['layer4'] == 1:
+            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(params['layer4Kernel'], params['layer4Kernel']),activation=params['conv4Activation'], data_format='channels_last', padding='same') (x)
+            if params['pooling'] == 1:
+                x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+            if params['dropout'] > 0:
+                x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
 
-  # x = tf.keras.layers.LayerNormalization()(x) # Normalisation still to be considered TODO - may be negative for XAI, and also not needed since scale of strains is similar....
+            x = tf.keras.layers.Conv2DTranspose(filters = 128, kernel_size = 3,  padding='same')(x)
+
 
         x = tf.keras.layers.Conv2DTranspose(filters = 64, kernel_size = 3,  padding='same')(x)
 
@@ -313,14 +323,23 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   #   decay_rate=0.1)
 
   lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=0.001,
+    initial_learning_rate=params['initial_lr'],
     decay_steps=steps_per_epoch*epochs,
-    decay_rate=1)
+    decay_rate=params['lr_decay_rate'])
 
-  model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule), # Compile
-              loss='MeanSquaredError', #custom_sigmoid_focal_crossentropy,custom_SparseCategoricalCrossentropy
+
+  if params['optimizer'] == 'Adadelta':
+     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule), # Compile
+              loss='MeanSquaredError', 
               metrics=['mean_squared_error'])
-
+  elif params['optimizer'] == 'Nadam':
+     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule), # Compile
+              loss='MeanSquaredError', 
+              metrics=['mean_squared_error'])
+  else:
+     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule), # Compile
+              loss='MeanSquaredError', 
+              metrics=['mean_squared_error'])
 
   return model
 
@@ -386,6 +405,8 @@ modelCNN_history = modelCNN.fit(train_ds_FI,
 
 ######################################### Performance evaluation ##############################################
 
+trainingHist = modelCNN_history.history
+
 predCNN = modelCNN.predict(X) # Make prediction
 predCNN_val = modelCNN.predict(X_val_FI) # Prediction of only validation data
 
@@ -396,7 +417,21 @@ predCNN_val_invStandard = predCNN_val[:,:,:,0]*std[7]+means[7] # Inverse standar
 ground_truth_invStandard = yFI*std[7]+means[7]
 ground_truth_val_invStandard = y_val_FI*std[7]+means[7]
 
-trainingHist = modelCNN_history.history
+
+
+# Reminder: the header index is the following
+# [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
+# ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
+
+# In the scaler we have the following indeces
+# [   0     1     2     3     4     5      6      7     8     9     10 ]
+# [ 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
+
+inputDat = np.zeros(samples2D.shape)
+for i in range(0,3): # First 3 features are not normalised
+    inputDat[:,:,:,i] = samples2D[:,:,:,i]
+for i in range(3,14): # Remaining features must be inversely normalised
+    inputDat[:,:,:,i] = samples2D[:,:,:,i]*std[i-3]+means[i-3]
 
 with open(histOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(trainingHist, f, indent=2)
@@ -404,8 +439,14 @@ with open(histOutPath, 'w') as f: # Dump data to json file at specified path
 with open(predOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(predCNN_invStandard.tolist(), f, indent=2)
 
+with open(gtOutPath, 'w') as f: # Dump data to json file at specified path
+    json.dump(ground_truth_invStandard.tolist(), f, indent=2)
+
 with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(params.to_json(), f, indent=2)
+
+with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
+    json.dump(inputDat.tolist(), f, indent=2)
 
 
 # predCNN_invStandard_reshape = predCNN_invStandard.reshape(ground_truth_invStandard.shape)
