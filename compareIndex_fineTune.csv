@@ -1,0 +1,13 @@
+﻿sweepName,sweepIdx,trainValRatio,batchSize,layer1Kernel,conv1Activation,pooling,dropout,layer2,layer2Kernel,conv2Activation,layer3,layer3Kernel,conv3Activation,layer4,layer4Kernel,conv4Activation,layer5,layer5Kernel,conv5Activation,layer6,layer6Kernel,conv6Activation,batchNorm,L1kernel_regularizer,L2kernel_regularizer,optimizer,initial_lr,lr_decay_rate
+trainVal,"2,3",1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+dropout,"4,5,6",0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+kernelSize,"7,8,9",0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0
+kernelRegularization,"10,11,12,13,14,15",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0
+batchNorm,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0
+activationFunctions,"17,18,19,20,21,22",0,0,0,1,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+actFunc_kernSize_drop_regular,"23,24,25,26",0,0,0,1,0,1,0,0,1,0,0,1,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0
+tanhLRelu_kernSize_drop_regular,"27,28,29,30,31",0,0,0,1,0,1,0,0,1,0,0,1,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0
+actFunc_kernSize_largeDrop_largeRegular_learnRate,"32,33,34,35",0,0,0,1,0,1,0,0,1,0,0,1,0,1,1,0,0,0,0,0,0,0,1,0,0,1,1
+actFunc_largeDrop_largeRegular_learnRate,"36,37,38,39",0,0,0,1,0,1,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,1,0,0,1,1
+actFunc_largeDrop_largeRegular_learnRate_batchNorm,"40,41,42,43",0,0,0,1,0,1,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,1,1,0,0,1,1
+largeModelRedo,"44,45,46",0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0

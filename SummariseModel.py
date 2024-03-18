@@ -23,7 +23,8 @@ import plotly
 
 import argparse
 
-
+# Set matplotlib style
+plt.style.use("seaborn-v0_8-colorblind")
 
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
@@ -135,6 +136,7 @@ plt.grid()
 plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['train', 'val'], loc='upper right')
+# plt.ylim([0,1000])
 
 
 # Plot prediction vs actual error

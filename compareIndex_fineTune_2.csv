@@ -1,0 +1,5 @@
+﻿sweepName,sweepIdx,trainValRatio,batchSize,layer1Kernel,conv1Activation,pooling,dropout,layer2,layer2Kernel,conv2Activation,layer3,layer3Kernel,conv3Activation,layer4,layer4Kernel,conv4Activation,layer5,layer5Kernel,conv5Activation,layer6,layer6Kernel,conv6Activation,batchNorm,L1kernel_regularizer,L2kernel_regularizer,optimizer,initial_lr,lr_decay_rate
+pureActFunctions,"2,3,4",0,0,0,1,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+combinationsTanhGelu,"5,6,7,8,9,",0,0,0,1,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+combinationsTanhSilu,"10,11,12,13,14",0,0,0,1,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+combinationsGeluSilu,"15,16,17,18,19",0,0,0,1,0,0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0

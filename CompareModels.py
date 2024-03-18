@@ -23,30 +23,32 @@ import pandas as pd
 
 import argparse
 
-trainEpochs = 200 # Maximum number of epochs for trained models
+plt.style.use("seaborn-v0_8-colorblind")
+
+trainEpochs = 500 # Maximum number of epochs for trained models
+resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\compareIndex_fineTune_2.csv'
 
 # For now manually set index of models for which 1 parameter was varied at a time
 baselineIdx = 1
 
-initialLearnRateSweeps = np.linspace(2,4,4-2+1, endpoint=True, dtype = int)
-learnRateDecaySweeps = np.linspace(5,8,8-5+1, endpoint=True, dtype = int)
-batchSizeSweeps = np.linspace(9,10,10-9+1, endpoint=True, dtype = int)
-trainValSweeps = np.linspace(11,12,12-11+1, endpoint=True, dtype = int)
-poolingSweeps = 13
-dropoutSweeps = np.linspace(14,16,16-14+1, endpoint=True, dtype = int)
-kernel1Sweeps = np.linspace(17,18,18-17+1, endpoint=True, dtype = int)
-kernel2Sweeps = np.linspace(19,20,20-19+1, endpoint=True, dtype = int)
-kernel3Sweeps = np.linspace(21,22,22-21+1, endpoint=True, dtype = int)
-smallModelSweeps = np.linspace(23,24,24-23+1, endpoint=True, dtype = int)
-largeModelSweeps = np.linspace(25,27,27-25+1, endpoint=True, dtype = int)
-reluLayerNumSweeps = np.linspace(28,31,31-28+1, endpoint=True, dtype = int)
-reluTanhLayerNumSweeps = np.linspace(32,35,35-32+1, endpoint=True, dtype = int)
-tanhReluLayerNumSweeps = np.linspace(36,39,39-36+1, endpoint=True, dtype = int)
-optimizerSweeps = np.linspace(40,41,41-40+1, endpoint=True, dtype = int)
+# initialLearnRateSweeps = np.linspace(2,4,4-2+1, endpoint=True, dtype = int)
+# learnRateDecaySweeps = np.linspace(5,8,8-5+1, endpoint=True, dtype = int)
+# batchSizeSweeps = np.linspace(9,10,10-9+1, endpoint=True, dtype = int)
+# trainValSweeps = np.linspace(11,12,12-11+1, endpoint=True, dtype = int)
+# poolingSweeps = 13
+# dropoutSweeps = np.linspace(14,16,16-14+1, endpoint=True, dtype = int)
+# kernel1Sweeps = np.linspace(17,18,18-17+1, endpoint=True, dtype = int)
+# kernel2Sweeps = np.linspace(19,20,20-19+1, endpoint=True, dtype = int)
+# kernel3Sweeps = np.linspace(21,22,22-21+1, endpoint=True, dtype = int)
+# smallModelSweeps = np.linspace(23,24,24-23+1, endpoint=True, dtype = int)
+# largeModelSweeps = np.linspace(25,27,27-25+1, endpoint=True, dtype = int)
+# reluLayerNumSweeps = np.linspace(28,31,31-28+1, endpoint=True, dtype = int)
+# reluTanhLayerNumSweeps = np.linspace(32,35,35-32+1, endpoint=True, dtype = int)
+# tanhReluLayerNumSweeps = np.linspace(36,39,39-36+1, endpoint=True, dtype = int)
+# optimizerSweeps = np.linspace(40,41,41-40+1, endpoint=True, dtype = int)
 
 
-
-resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\test'
 
 # Argument to pass - which job should be summarised
 argParser = argparse.ArgumentParser()
@@ -58,7 +60,7 @@ jobName = args.jobname
 repeats = int(args.repeats)
 
 # Format paths for data loading
-resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+
 resultPath = os.path.join(resultPath, '{jn}'.format(jn=jobName))
 if repeats is not None: # if there are several repeats (should usually be the case)
     temp = []
@@ -70,7 +72,7 @@ else:
 
 # Number of models per repeat
 numModels = len([entry for entry in os.listdir(resultPath[0]) if 'predictions_{jn}'.format(jn=jobName) in entry])
-
+print(numModels)
 
 for i in range(repeats): # For each repeat (1=indexed)
     for j in range(numModels): # For each model (1-indexed)
@@ -96,8 +98,8 @@ for i in range(repeats): # For each repeat (1=indexed)
             parameter = json.loads(parameter)
         
         if i == 0 and j == 0: # Initialise arrays on first loop
-            trainHist = np.empty(shape = (repeats, numModels, len(history['loss']))) # Array of training histories
-            valHist = np.empty(shape = (repeats, numModels, len(history['val_loss']))) # Array of validation histories
+            trainHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of training histories
+            valHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of validation histories
             parameters = [] # Array of parameters
             RMSEs = np.empty(shape = (repeats, numModels)) # Array of RMSEs
             groundTruths = np.empty(shape = (repeats, numModels, groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])) # Array of ground truths
@@ -124,7 +126,7 @@ for i in range(repeats): # For each repeat (1=indexed)
 # Convert parameter dictionaries to dataframe 
 parameters = pd.DataFrame.from_dict(parameters)
 parameters.index += 1 # Change to be 1-indexed as the models are this...
-print(parameters.head())
+# print(parameters.head())
 
 # Create indeces for displaying sweep results
 
@@ -251,7 +253,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             ax = plt.subplot(len(sweep), columns,i*columns+4)
             ax.plot(trainPlot, color=colors[k])
             ax.plot(valPlot, '--', color=colors[k])
-            plt.ylim([0.05,0.35])
+            plt.ylim([0,0.35])
         plt.grid()
         if i == 0:
             plt.title('model loss')
@@ -315,55 +317,62 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
 
 # Defint sweeps and their variables
-initialLearnRateIdx = np.hstack((baselineIdx,initialLearnRateSweeps))
-initialLearnRateparamVariables = ['initial_lr']
+# initialLearnRateIdx = np.hstack((baselineIdx,initialLearnRateSweeps))
+# initialLearnRateparamVariables = ['initial_lr']
 
-learnRateDecayIdx = np.hstack((baselineIdx,learnRateDecaySweeps))
-learnRateDecayparamVariables = ['initial_lr', 'lr_decay_rate']
+# learnRateDecayIdx = np.hstack((baselineIdx,learnRateDecaySweeps))
+# learnRateDecayparamVariables = ['initial_lr', 'lr_decay_rate']
 
-batchSizeIdx = np.hstack((baselineIdx,batchSizeSweeps))
-batchSizeparamVariables = ['batchSize']
+# batchSizeIdx = np.hstack((baselineIdx,batchSizeSweeps))
+# batchSizeparamVariables = ['batchSize']
 
-trainValIdx = np.hstack((baselineIdx,trainValSweeps))
-trainValparamVariables = ['trainValRatio']
+# trainValIdx = np.hstack((baselineIdx,trainValSweeps))
+# trainValparamVariables = ['trainValRatio']
 
-poolingIdx = np.hstack((baselineIdx,poolingSweeps))
-poolingparamVariables = ['pooling']
+# poolingIdx = np.hstack((baselineIdx,poolingSweeps))
+# poolingparamVariables = ['pooling']
 
-dropoutIdx = np.hstack((baselineIdx,dropoutSweeps))
-dropoutparamVariables = ['dropout']
+# dropoutIdx = np.hstack((baselineIdx,dropoutSweeps))
+# dropoutparamVariables = ['dropout']
 
-kernel1Idx = np.hstack((baselineIdx,kernel1Sweeps))
-kernel1paramVariables = ['layer1Kernel']
+# kernel1Idx = np.hstack((baselineIdx,kernel1Sweeps))
+# kernel1paramVariables = ['layer1Kernel']
 
-kernel2Idx = np.hstack((baselineIdx,kernel2Sweeps))
-kernel2paramVariables = ['layer2Kernel']
+# kernel2Idx = np.hstack((baselineIdx,kernel2Sweeps))
+# kernel2paramVariables = ['layer2Kernel']
 
-kernel3Idx = np.hstack((baselineIdx,kernel3Sweeps))
-kernel3paramVariables = ['layer3Kernel']
+# kernel3Idx = np.hstack((baselineIdx,kernel3Sweeps))
+# kernel3paramVariables = ['layer3Kernel']
 
-smallModelIdx = np.hstack((baselineIdx,smallModelSweeps))
-smallModelparamVariables = ['layer2','layer3', 'conv1Activation', 'conv2Activation', 'conv3Activation']
+# smallModelIdx = np.hstack((baselineIdx,smallModelSweeps))
+# smallModelparamVariables = ['layer2','layer3', 'conv1Activation', 'conv2Activation', 'conv3Activation']
 
-largeModelIdx = np.hstack((baselineIdx,largeModelSweeps))
-largeModelparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
+# largeModelIdx = np.hstack((baselineIdx,largeModelSweeps))
+# largeModelparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
 
-largeModelIdx = np.hstack((baselineIdx,largeModelSweeps))
-largeModelparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
+# largeModelIdx = np.hstack((baselineIdx,largeModelSweeps))
+# largeModelparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
 
-reluLayerNumIdx = np.hstack((baselineIdx,reluLayerNumSweeps))
-reluLayerNumparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
+# reluLayerNumIdx = np.hstack((baselineIdx,reluLayerNumSweeps))
+# reluLayerNumparamVariables = ['layer4','layer5', 'layer6', 'conv4Activation', 'conv5Activation', 'conv6Activation']
 
-reluTanhLayerNumIdx = np.hstack((baselineIdx,reluTanhLayerNumSweeps))
-reluTanhLayerNumparamVariables = ['layer4','layer5', 'layer6','conv3Activation', 'conv4Activation', 'conv5Activation', 'conv6Activation']
+# reluTanhLayerNumIdx = np.hstack((baselineIdx,reluTanhLayerNumSweeps))
+# reluTanhLayerNumparamVariables = ['layer4','layer5', 'layer6','conv3Activation', 'conv4Activation', 'conv5Activation', 'conv6Activation']
 
-tanhReluLayerNumIdx = np.hstack((baselineIdx,tanhReluLayerNumSweeps))
-tanhReluLayerNumparamVariables = ['layer4','layer5', 'layer6','conv3Activation', 'conv4Activation', 'conv5Activation', 'conv6Activation']
+# tanhReluLayerNumIdx = np.hstack((baselineIdx,tanhReluLayerNumSweeps))
+# tanhReluLayerNumparamVariables = ['layer4','layer5', 'layer6','conv3Activation', 'conv4Activation', 'conv5Activation', 'conv6Activation']
 
-optimizerIdx = np.hstack((baselineIdx,optimizerSweeps))
-optimizerparamVariables = ['optimizer']
+# optimizerIdx = np.hstack((baselineIdx,optimizerSweeps))
+# optimizerparamVariables = ['optimizer']
 
-
+# print(RMSEs)
+sweepIdx = pd.read_csv(sweepIdxPath)
+# toPlot = [9,10,11]
+for i in sweepIdx.index:
+    plotParams = sweepIdx.apply(lambda row: row[row == 1].index.tolist(), axis=1)[i]
+    sweepnums = np.fromstring(sweepIdx['sweepIdx'][i],dtype=int, sep=',')
+    sweepnums = np.hstack((baselineIdx,sweepnums))
+    sweepPlot(sweep=sweepnums, paramVariables = plotParams, figname = sweepIdx['sweepName'][i])
 
 # sweepPlot(sweep=initialLearnRateIdx, paramVariables = initialLearnRateparamVariables, figname = 'Initial learning rate')
 # sweepPlot(sweep=learnRateDecayIdx, paramVariables = learnRateDecayparamVariables, figname = 'Final learning rate')
@@ -377,9 +386,9 @@ optimizerparamVariables = ['optimizer']
 # sweepPlot(sweep=smallModelIdx, paramVariables = smallModelparamVariables, figname = 'Smaller models')
 # sweepPlot(sweep=largeModelIdx, paramVariables = largeModelparamVariables, figname = 'Larger models')
 # sweepPlot(sweep=reluLayerNumIdx, paramVariables = reluLayerNumparamVariables, figname = 'Larger models with only relu activation')
-sweepPlot(sweep=reluTanhLayerNumIdx, paramVariables = reluTanhLayerNumparamVariables, figname = 'Larger models with relu activation in first layer')
-sweepPlot(sweep=tanhReluLayerNumIdx, paramVariables = tanhReluLayerNumparamVariables, figname = 'Larger models with tanh activation in first layer, tanh in rest')
-sweepPlot(sweep=optimizerIdx, paramVariables = optimizerparamVariables, figname = 'Optimizer')
+# sweepPlot(sweep=reluTanhLayerNumIdx, paramVariables = reluTanhLayerNumparamVariables, figname = 'Larger models with relu activation in first layer')
+# sweepPlot(sweep=tanhReluLayerNumIdx, paramVariables = tanhReluLayerNumparamVariables, figname = 'Larger models with tanh activation in first layer, tanh in rest')
+# sweepPlot(sweep=optimizerIdx, paramVariables = optimizerparamVariables, figname = 'Optimizer')
 
 plt.show()
 # ax = plt.subplot(2,totalCols,(3,4))

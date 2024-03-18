@@ -38,7 +38,7 @@ sweepIdx = int(args.parallel)
 # Batch size
 # Train/val ratio
 
-sweepPath = 'sweep_definition_fineTune.csv'
+sweepPath = 'sweep_definition_fineTune_2.csv'
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
@@ -273,35 +273,78 @@ val_out_shape = y_val_e22.shape
 ################################################## CNN Model definition #####################################################
 
 def TBDCNet_modelCNN(inputShape, outputShape, params):
+
+  if params['L1kernel_regularizer'] > 0 and params['L2kernel_regularizer'] > 0:
+     regularizer = tf.keras.regularizers.L1L2(l1=params['L1kernel_regularizer'], l2=params['L2kernel_regularizer'])
+  elif params['L1kernel_regularizer'] > 0:
+     regularizer = tf.keras.regularizers.L1(params['L1kernel_regularizer'])
+  elif params['L2kernel_regularizer'] > 0:
+     regularizer = tf.keras.regularizers.L2(params['L2kernel_regularizer'])
+  else:
+    regularizer = None
+
+
   input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
   x = input
   # x = tf.keras.layers.LayerNormalization()(x)
-  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same') (x)
+  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+  if params['batchNorm'] == 1:
+    x = tf.keras.layers.BatchNormalization()(x)
   if params['pooling'] == 1:
     x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
   if params['dropout'] > 0:
     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
 
   if params['layer2'] == 1:
-    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(params['layer2Kernel'], params['layer2Kernel']),activation=params['conv2Activation'], data_format='channels_last', padding='same') (x)
+    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(params['layer2Kernel'], params['layer2Kernel']),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+    if params['batchNorm'] == 1:
+      x = tf.keras.layers.BatchNormalization()(x)
     if params['pooling'] == 1:
        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
     if params['dropout'] > 0:
        x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         
     if params['layer3'] == 1:
-        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(params['layer3Kernel'], params['layer3Kernel']),activation=params['conv3Activation'], data_format='channels_last', padding='same') (x)
+        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(params['layer3Kernel'], params['layer3Kernel']),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+        if params['batchNorm'] == 1:
+           x = tf.keras.layers.BatchNormalization()(x)
         if params['pooling'] == 1:
            x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
         if params['dropout'] > 0:
            x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         
         if params['layer4'] == 1:
-            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(params['layer4Kernel'], params['layer4Kernel']),activation=params['conv4Activation'], data_format='channels_last', padding='same') (x)
+            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(params['layer4Kernel'], params['layer4Kernel']),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+            if params['batchNorm'] == 1:
+                x = tf.keras.layers.BatchNormalization()(x)
             if params['pooling'] == 1:
                 x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
             if params['dropout'] > 0:
                 x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+          
+            if params['layer5'] == 1:
+                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(params['layer5Kernel'], params['layer5Kernel']),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                if params['batchNorm'] == 1:
+                    x = tf.keras.layers.BatchNormalization()(x)
+                if params['pooling'] == 1:
+                    x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+                if params['dropout'] > 0:
+                    x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+            
+                if params['layer6'] == 1:
+                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(params['layer6Kernel'], params['layer6Kernel']),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                    if params['batchNorm'] == 1:
+                        x = tf.keras.layers.BatchNormalization()(x)
+                    if params['pooling'] == 1:
+                        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+                    if params['dropout'] > 0:
+                        x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+                  
+                    x = tf.keras.layers.Conv2DTranspose(filters = 512, kernel_size = 3,  padding='same')(x)
+
+
+                x = tf.keras.layers.Conv2DTranspose(filters = 256, kernel_size = 3,  padding='same')(x)
+
 
             x = tf.keras.layers.Conv2DTranspose(filters = 128, kernel_size = 3,  padding='same')(x)
 
@@ -348,7 +391,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
 ############################################ Callbacks ###########################################
 
-checkpoint_path = "training_checkpoints/cp.ckpt"
+checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn=args.jobname, num = args.parallel)
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 try:
@@ -357,20 +400,20 @@ except:
   pass
 
 # CHECKPOINT CALLBACK
-cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path+'2',
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
                                                  save_best_only = True,
                                                  monitor = 'val_loss',
                                                  verbose=1)
 
 early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
-    monitor='loss',
+    monitor='val_loss',
     min_delta=0,
     patience=40,
-    verbose=0,
+    verbose=1,
     mode='auto',
     baseline=None,
-    restore_best_weights=True
+    restore_best_weights=False
 )
 
 
@@ -398,7 +441,7 @@ modelCNN_history = modelCNN.fit(train_ds_FI,
                                 steps_per_epoch=steps_per_epoch,
                                 validation_data=val_ds_FI,
                                 validation_steps = validation_steps,
-                                callbacks=[early_stopping_monitor]
+                                callbacks=[early_stopping_monitor, cp_callback]
                                 )
 
 
@@ -406,6 +449,7 @@ modelCNN_history = modelCNN.fit(train_ds_FI,
 ######################################### Performance evaluation ##############################################
 
 trainingHist = modelCNN_history.history
+modelCNN.load_weights(checkpoint_path)
 
 predCNN = modelCNN.predict(X) # Make prediction
 predCNN_val = modelCNN.predict(X_val_FI) # Prediction of only validation data
