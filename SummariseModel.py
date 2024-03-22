@@ -73,7 +73,7 @@ with open(inputOutPath) as json_file: # load into dict
 RMSE = tf.keras.metrics.RootMeanSquaredError() # CNN
 RMSE.update_state(groundTruth,prediction)
 
-# print('RMSE  = ' + str(RMSE.result().numpy()))
+print('RMSE  = ' + str(RMSE.result().numpy()))
 
 
 # Intantiate figure
@@ -81,6 +81,7 @@ px = 1/plt.rcParams['figure.dpi']  # pixel in inches
 # fig = plt.figure(figsize=(1200*px, 800*px), constrained_layout=True)
 fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
 totalCols = 6 # figure columns
+plt.style.use("seaborn-v0_8-colorblind")
 
 # Table of parameters for the given model
 ax = plt.subplot(1,totalCols,(1,2))
@@ -118,7 +119,7 @@ ax.annotate(
 # Prediction vs ground truth value plot
 ax = plt.subplot(2,totalCols,(3,4))
 ax.scatter(x = groundTruth, y = prediction, marker = ".")
-ax.plot([0,4],[0,4],'r')
+ax.plot([0,4],[0,4],color = '#04D8B2')
 plt.xlim([np.min(groundTruth),np.max(groundTruth)])
 plt.ylim([np.min(prediction),np.max(prediction)])
 # ax.set_aspect('equal')
@@ -150,7 +151,7 @@ sns.histplot(absErrDfFlat)
 plt.grid()
 plt.xlabel('Absolute Error')
 plt.title('Distribution of aboslute errors')
-
+plt.legend([],[], frameon=False)
 
 # Plot prediction vs actual field
 sampleNum = 1
@@ -158,14 +159,14 @@ sampleNum = 1
 grid = [inputDat[0,:,:,1],inputDat[0,:,:,2]] # Grid for plotting
 
 ax = plt.subplot(2,totalCols,11)
-CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:], cmap = 'jet')
+CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:])
 # plt.xlabel('x')
 # plt.ylabel('y')
 # fig.colorbar(CS)
 plt.title('ground truth')
 
 ax = plt.subplot(2,totalCols,12)
-CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:], cmap = 'jet', levels = CS.levels)
+CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:],  levels = CS.levels)
 # plt.xlabel('x')
 # plt.ylabel('y')
 fig.colorbar(CS2)

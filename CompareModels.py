@@ -207,6 +207,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             )
 
         ######### RMSE plot
+        plt.style.use("seaborn-v0_8-colorblind")
         ax = plt.subplot(len(sweep), columns,(i*columns+2))
         g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5) # Remember the models are 1-indexed
         ax.grid()
@@ -234,7 +235,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
                 plt.title('Prediction vs ground truth')
                 plt.ylabel('prediction')
                 plt.xlabel('ground truth')
-            ax.plot([0,4],[0,4],'r')
+            ax.plot([0,4],[0,4],color = '#04D8B2')
             # ax.set_xlim([np.min([np.min(gtsample), 0.5]),np.max([np.max(gtsample),4.5])])
             # ax.set_ylim([np.min([np.min(predsample), 0.5]),np.max([np.max(predsample),4.5])])
             ax.set_xlim([0,4])
@@ -276,15 +277,17 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         if i == 0:
             plt.xlabel('Absolute Error')
             plt.title('Error distribution')
+            
         
 
         ######## Plot prediction vs actual field
+            plt.style.use("seaborn-v0_8-colorblind")
         gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
         with open(gridPath) as json_file: # load into dict
             grid = np.array(json.load(json_file)) # grid for plotting
 
         ax = plt.subplot(len(sweep), columns,i*columns+6)
-        CS = ax.contourf(grid[0],grid[1],groundTruths[0, sweep[i]-1][sampleNum,:,:], cmap = 'jet')
+        CS = ax.contourf(grid[0],grid[1],groundTruths[0, sweep[i]-1][sampleNum,:,:])
         # plt.xlabel('x')
         # plt.ylabel('y')
         # fig.colorbar(CS)
@@ -295,7 +298,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
 
         ax = plt.subplot(len(sweep), columns,i*columns+7)
-        CS2 = ax.contourf(grid[0],grid[1],predictions[0, sweep[i]-1][sampleNum,:,:], cmap = 'jet', levels = CS.levels)
+        CS2 = ax.contourf(grid[0],grid[1],predictions[0, sweep[i]-1][sampleNum,:,:], levels = CS.levels)
         # plt.xlabel('x')
         # plt.ylabel('y')
         if i == 0:
@@ -305,7 +308,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
 
         ax = plt.subplot(len(sweep), columns,i*columns+8)
-        CS3 = ax.contourf(grid[0],grid[1],np.square(predictions[0, sweep[i]-1][sampleNum,:,:]-groundTruths[0, sweep[i]-1][sampleNum,:,:]), cmap = 'jet')
+        CS3 = ax.contourf(grid[0],grid[1],np.square(predictions[0, sweep[i]-1][sampleNum,:,:]-groundTruths[0, sweep[i]-1][sampleNum,:,:]))
         # plt.xlabel('x')
         # plt.ylabel('y')
         if i == 0:
@@ -367,7 +370,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
 # print(RMSEs)
 sweepIdx = pd.read_csv(sweepIdxPath)
-# toPlot = [9,10,11]
+toPlot = [9,10,11]
 for i in sweepIdx.index:
     plotParams = sweepIdx.apply(lambda row: row[row == 1].index.tolist(), axis=1)[i]
     sweepnums = np.fromstring(sweepIdx['sweepIdx'][i],dtype=int, sep=',')
