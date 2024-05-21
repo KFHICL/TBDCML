@@ -1,7 +1,13 @@
-##############################################################################
-######################## TBDC CNN TRAINING ON HPC  ###########################
-##############################################################################
+#####################################################################
+# Description
+#####################################################################
+# This script is run on the computing cluster (HPC) and contains the
+# model definition and training processes. It must be pointed to a 
+# sweep definition csv wherein the model hyperparamters are tabulated
 
+#####################################################################
+# Imports
+#####################################################################
 import sys
 
 import os
@@ -25,56 +31,57 @@ import pandas as pd
 
 import argparse
 
+#####################################################################
+# Settings
+#####################################################################
+
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
-
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
 argParser.add_argument("-j", "--jobname", help="Job name") # Name of job passed when calling script
-
 args = argParser.parse_args()
 sweepIdx = int(args.parallel)
 
-# Sweep parameters
-# Batch size
-# Train/val ratio
-
-sweepPath = 'sweep_definition_fineTune_2.csv'
+# Sweep definition of hyperparameters
+sweepPath = 'sweep_definition_fineTune_2.csv' # Name of sweep definition file
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
 
-
-numSamples = 100
-batchSize = params['batchSize'] # We have 100 images
-trainValRatio = params['trainValRatio']
-train_length = round(numSamples * trainValRatio)
-epochs = 500
+# Various settings
+numSamples = 100 # Number of data samples (i.e. TBDC specimens)
+batchSize = params['batchSize'] # Batch size for training
+trainValRatio = params['trainValRatio'] # Training and validation data split ratio
+train_length = round(numSamples * trainValRatio) # Number of training samples 
+epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
 validation_steps = math.ceil((100-train_length) / batchSize)
 
-# For reproducible results
+# For reproducible results set a seed
 seed = 0
 tf.random.set_seed(seed)
 
-
-
-timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M")
-histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
+histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Training history file
 histOutPath = os.path.join('dataout',histOutName)
-predOutName = 'predictions_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+predOutName = 'predictions_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Predictions
 predOutPath = os.path.join('dataout',predOutName)
-gtOutName = 'groundTruth_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+gtOutName = 'groundTruth_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Ground truths
 gtOutPath = os.path.join('dataout',gtOutName)
-paramOutName = 'parameters_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+paramOutName = 'parameters_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Hyperparameters
 paramOutPath = os.path.join('dataout',paramOutName)
-inputOutName = 'input_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Naming of file out
+inputOutName = 'input_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Model inputs
 inputOutPath = os.path.join('dataout',inputOutName)
 
-############################### Data functions ###################################
+#####################################################################
+# Data functions
+#####################################################################
 
 def loadSample(path = str):
   '''
   Imports data in csv and formats into a tensor
+  Data from Abaqus comes in a slightly bothersome format, this 
+  function manually reformats it
   '''
   # Read sample csv data
   sample = pd.read_csv(path)
@@ -86,9 +93,7 @@ def loadSample(path = str):
   coords = [[x for x in coords[y] if x] for y in range(len(values[:,1]))] # remove empty array elements
   coords = np.array([[float(x) for x in coords[y][0:2]] for y in range(len(values[:,1]))]) # Take 2d coordinates and convert to float
 
-
   values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
-  # values = values.astype(np.float)
 
   headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
 
@@ -99,7 +104,8 @@ def loadSample(path = str):
 
 def normalise(input_matrix) -> tuple:
     '''
-    Normalise values in matrix to lie between 0 and 1
+    Normalise values in matrix by removing the mean and scaling 
+    to one standard deviation
 
     Args
     ----------
@@ -125,21 +131,7 @@ def normalise(input_matrix) -> tuple:
     else:
         raise Exception("Data to be normalised not of correct shape")
 
-
-    # for i in range(3, 14):
-    #   if len(np.shape(input_matrix)) == 3:
-    #     input_matrix[:,:,i] = preprocessing.scale(input_matrix[:,:,i], axis=0, copy=True)
-    #   elif len(np.shape(input_matrix)) == 2:
-    #     input_matrix[:,i] = preprocessing.scale(input_matrix[:,i], axis=0, copy=True)
-    #   else:
-    #     raise Exception("Data to be normalised not of correct shape")
-
-
-
     return input_matrix, scaler
-
-
-
 
 
 def show_prediction(sample, predictions, names, ground_truth, grid):
@@ -164,7 +156,6 @@ def show_prediction(sample, predictions, names, ground_truth, grid):
     CS = ax.contourf(grid[0],grid[1],sample[:,:,i], cmap = 'jet')
     plt.xlabel('x')
     plt.ylabel('y')
-    # plt.title(testHeaders[i])
     fig.colorbar(CS)
     plt.title('input'+str(i+1))
 
@@ -186,13 +177,13 @@ def show_prediction(sample, predictions, names, ground_truth, grid):
     fig.colorbar(CS2)
     plt.title(names[idx])
 
+#####################################################################
+# Data import, normalisation, and reshaping
+#####################################################################
 
-
-############################### Data preprocessing ############################################
 # Import all data samples
-
 for i in range(numSamples):
-  path = 'datain/Unnotched_TBDC_2022_'+str(i)+'.csv'
+  path = 'datain/Unnotched_TBDC_2022_'+str(i)+'.csv' # The data format after extracting from Abaqus
   if i==0:
     headers, samples = loadSample(path)
     samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
@@ -208,16 +199,14 @@ samples2D = samples.reshape(numSamples,55,20,14)
 
 
 
-
-############################# ML training Settings and dataset preprocessing ###########################################
+#####################################################################
+# ML training Settings and dataset preprocessing
+#####################################################################
 
 # Reminder: the header index is the following
 # [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
 # ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
 
-
-
-# e22_ds = samples2D[:,:,:,[11,12,13,4]] # For first experiment take stiffness matrix and attempt to predict vertical strain
 X = samples2D[:,:,:,[11,12,13]]  # Input data is always stiffness components
 
 ye11 = samples2D[:,:,:,3] # Labels for horizontal strain
@@ -268,13 +257,28 @@ train_out_shape = y_train_e22.shape
 val_out_shape = y_val_e22.shape
 
 
-
-
-################################################## CNN Model definition #####################################################
+#####################################################################
+# CNN Model definition
+#####################################################################
 
 def TBDCNet_modelCNN(inputShape, outputShape, params):
+  '''
+  This function returns a model based on the hyperparameters in the
+  sweep definition
 
-  if params['L1kernel_regularizer'] > 0 and params['L2kernel_regularizer'] > 0:
+  Args
+  ----------
+  inputShape: the 55x20x3 input image shape
+  outputShape: the prediction image shape (currently unused)
+  params: The hyperparameters for the given sweep index
+
+  Returns
+  ----------
+  model: tensorflow model
+
+  '''
+  # Kernel regularizer (both linear and quadratic)
+  if params['L1kernel_regularizer'] > 0 and params['L2kernel_regularizer'] > 0: 
      regularizer = tf.keras.regularizers.L1L2(l1=params['L1kernel_regularizer'], l2=params['L2kernel_regularizer'])
   elif params['L1kernel_regularizer'] > 0:
      regularizer = tf.keras.regularizers.L1(params['L1kernel_regularizer'])
@@ -283,10 +287,12 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   else:
     regularizer = None
 
-
+  # Define the model architecture. Each convolutional layer has settings related to the kernel size, 
+  # activation function, and regularizer. After each convolutional layer there may be a batch-
+  # normalization layer, a max pooling layer, and a dropout layer. The number of convolutional layers
+  # is given in the sweep definition
   input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
   x = input
-  # x = tf.keras.layers.LayerNormalization()(x)
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
     x = tf.keras.layers.BatchNormalization()(x)
@@ -357,20 +363,15 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   output = x
 
-  model = tf.keras.Model(inputs=input, outputs=output)
+  model = tf.keras.Model(inputs=input, outputs=output) # Create model
 
-  # Default initial learning rate is 0.001
-  # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-  #   initial_learning_rate=0.005,
-  #   decay_steps=steps_per_epoch*epochs, # Such that "decay_rate" is the factor multiplied onto the initial rate at the end of training
-  #   decay_rate=0.1)
-
+  # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
   lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=params['initial_lr'],
     decay_steps=steps_per_epoch*epochs,
     decay_rate=params['lr_decay_rate'])
 
-
+  # Compile model with the optimizer in the sweep definition
   if params['optimizer'] == 'Adadelta':
      model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule), # Compile
               loss='MeanSquaredError', 
@@ -386,11 +387,11 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   return model
 
+#####################################################################
+# Training callbacks
+#####################################################################
 
-
-
-############################################ Callbacks ###########################################
-
+# Checkpoints to allow saving best model at various points
 checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn=args.jobname, num = args.parallel)
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
@@ -399,41 +400,45 @@ try:
 except:
   pass
 
-# CHECKPOINT CALLBACK
+# Save best weights to checkpoint
 cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
                                                  save_best_only = True,
                                                  monitor = 'val_loss',
                                                  verbose=1)
 
+# Early stopping callback which monitors improvements and stops training if
+# it stagnates.
 early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
-    monitor='val_loss',
-    min_delta=0,
-    patience=40,
-    verbose=1,
+    monitor='val_loss', # Monitor validation loss
+    min_delta=0, # Minimum improvement to consider an improvement
+    patience=40, # Number of epochs with no improvement before stopping training
+    verbose=1, # Records message when earlystopping
     mode='auto',
-    baseline=None,
-    restore_best_weights=False
+    baseline=None, 
+    restore_best_weights=False # Do not restore best weights after early stopping, we do this manually to allow recording of the full training history
 )
 
-
-############################################## Model definition ################################################
+#####################################################################
+# Model instantiation
+#####################################################################
 
 tf.keras.backend.clear_session() # Clear the state and frees up memory
 
-# CNN MODEL DEFININTION
+# CNN Model creation
 modelCNN = TBDCNet_modelCNN(inputShape = train_in_shape[1:], outputShape = train_out_shape[1:], params = params)
 modelCNNname = 'CNNModel1'
 
-
-
-############################################### Scaler values for inverse transformation ########################
+# Save normalisation (standard scaler) values to allow inverse transformation 
 means = scaler.mean_
 std = np.sqrt(scaler.var_)
+# In the scaler we have the following indeces
+# [   0     1     2     3     4     5      6      7     8     9     10 ]
+# [ 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
 
-
-
-########################################## Model training ##################################################
+#####################################################################
+# Model training
+#####################################################################
 
 # Fit model to Failure index
 modelCNN_history = modelCNN.fit(train_ds_FI,
@@ -445,23 +450,21 @@ modelCNN_history = modelCNN.fit(train_ds_FI,
                                 )
 
 
+#####################################################################
+# Data export
+#####################################################################
 
-######################################### Performance evaluation ##############################################
-
-trainingHist = modelCNN_history.history
-modelCNN.load_weights(checkpoint_path)
+trainingHist = modelCNN_history.history # save training history
+modelCNN.load_weights(checkpoint_path) # load best model weights
 
 predCNN = modelCNN.predict(X) # Make prediction
 predCNN_val = modelCNN.predict(X_val_FI) # Prediction of only validation data
 
-# Inverse standardisation and reshaping for performance outputting
-predCNN_invStandard = predCNN[:,:,:,0]*std[7]+means[7] # Inverse standardisation
-predCNN_val_invStandard = predCNN_val[:,:,:,0]*std[7]+means[7] # Inverse standardisation
-
+# Inverse standardisation and reshaping to evaluate with physical quantities intact
+predCNN_invStandard = predCNN[:,:,:,0]*std[7]+means[7]
+predCNN_val_invStandard = predCNN_val[:,:,:,0]*std[7]+means[7] 
 ground_truth_invStandard = yFI*std[7]+means[7]
 ground_truth_val_invStandard = y_val_FI*std[7]+means[7]
-
-
 
 # Reminder: the header index is the following
 # [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
@@ -474,7 +477,7 @@ ground_truth_val_invStandard = y_val_FI*std[7]+means[7]
 inputDat = np.zeros(samples2D.shape)
 for i in range(0,3): # First 3 features are not normalised
     inputDat[:,:,:,i] = samples2D[:,:,:,i]
-for i in range(3,14): # Remaining features must be inversely normalised
+for i in range(3,14): # Remaining features must have normalisation inversed
     inputDat[:,:,:,i] = samples2D[:,:,:,i]*std[i-3]+means[i-3]
 
 with open(histOutPath, 'w') as f: # Dump data to json file at specified path
@@ -491,13 +494,3 @@ with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
 
 with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(inputDat.tolist(), f, indent=2)
-
-
-# predCNN_invStandard_reshape = predCNN_invStandard.reshape(ground_truth_invStandard.shape)
-# predCNN_val_invStandard_reshape = predCNN_val_invStandard.reshape(ground_truth_val_invStandard.shape)
-
-# RMSECNNFI = tf.keras.metrics.RootMeanSquaredError() # CNN
-# RMSECNNFI.update_state(ground_truth_invStandard,predCNN_invStandard_reshape)
-
-# RMSECNNFI_val = tf.keras.metrics.RootMeanSquaredError() # CNN
-# RMSECNNFI_val.update_state(ground_truth_val_invStandard,predCNN_val_invStandard_reshape)

@@ -1,4 +1,15 @@
+#####################################################################
+# Description
+#####################################################################
+# This script provides and overview of the performance and training 
+# behaviour of a single model in a sweep. The RMSE is calculated for
+# all samples, and the results of the model are visualised in various 
+# plots.
 
+
+#####################################################################
+# Imports
+#####################################################################
 import sys
 
 import os
@@ -23,8 +34,16 @@ import plotly
 
 import argparse
 
+#####################################################################
+# Settings
+#####################################################################
+
 # Set matplotlib style
 plt.style.use("seaborn-v0_8-colorblind")
+
+#####################################################################
+# Input parsing and paths to training files
+#####################################################################
 
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
@@ -34,22 +53,22 @@ argParser.add_argument("-rp", "--repeat", help="Number of repeats done of job") 
 argParser.add_argument("-i", "--jobindex", help="Index of job to summarise") # parameter to allow parallel running on the HPC
 
 args = argParser.parse_args()
-jobName = args.jobname
-repeat = args.repeat
-jobIndex = int(args.jobindex)
+jobName = args.jobname # Jobname e.g. "sweep1403repeat"
+repeat = args.repeat # Number of repeats done in training
+jobIndex = int(args.jobindex) # Index of the model to summarise (see sweep definition csv file for indices)
 
 resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
 resultPath = os.path.join(resultPath, '{jn}{rp}'.format(rp = repeat, jn=jobName),'dataout')
 
-histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Naming of file out
+histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Training history
 histOutPath = os.path.join(resultPath,histOutName)
-predOutName = 'predictions_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Naming of file out
+predOutName = 'predictions_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions
 predOutPath = os.path.join(resultPath,predOutName)
-gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Naming of file out
+gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths
 gtOutPath = os.path.join(resultPath,gtOutName)
-paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Naming of file out
+paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Hyperparameters of model
 paramOutPath = os.path.join(resultPath,paramOutName)
-inputOutName = 'input_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Naming of file out
+inputOutName = 'input_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Inputs for model
 inputOutPath = os.path.join(resultPath,inputOutName)
 
 
@@ -68,42 +87,48 @@ with open(gtOutPath) as json_file: # load into dict
 
 with open(inputOutPath) as json_file: # load into dict
     inputDat = np.array(json.load(json_file))
-# print(groundTruth.shape)
-# print(prediction.shape)
-RMSE = tf.keras.metrics.RootMeanSquaredError() # CNN
+
+#####################################################################
+# RMSE (root mean squared error) calculation
+#####################################################################
+
+RMSE = tf.keras.metrics.RootMeanSquaredError()
 RMSE.update_state(groundTruth,prediction)
 
 print('RMSE  = ' + str(RMSE.result().numpy()))
 
+#####################################################################
+# Model summary figure
+#####################################################################
 
 # Intantiate figure
 px = 1/plt.rcParams['figure.dpi']  # pixel in inches
-# fig = plt.figure(figsize=(1200*px, 800*px), constrained_layout=True)
 fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
 totalCols = 6 # figure columns
-plt.style.use("seaborn-v0_8-colorblind")
+plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme
 
-# Table of parameters for the given model
-ax = plt.subplot(1,totalCols,(1,2))
+# Table of hyperparameters for the given model
+ax = plt.subplot(1,totalCols,(1,2)) # Axis definition and limits
 ncols = 2
 nrows = len(parameters)
 ax.set_xlim(0, ncols)
 ax.set_ylim(0, nrows)
 ax.set_axis_off()
 
-for y in range(0, nrows):
-    ax.annotate(
+for y in range(0, nrows): # Loop over all hyperparameters
+    ax.annotate( # Name of hyperparameter
         xy=(0,y),
         text=list(parameters.keys())[y],
         ha='left'
     )
-    ax.annotate(
+    ax.annotate( # Value of hyperparameter
         xy=(1,y),
         text=list(parameters.values())[y],
         ha='left'
     )
 
-ax.annotate(
+# Annotate with headers
+ax.annotate( 
     xy=(0, nrows),
     text='Parameter',
     weight='bold',
@@ -116,13 +141,12 @@ ax.annotate(
     ha='left'
 )
 
-# Prediction vs ground truth value plot
+# Prediction vs ground truth scatter plot
 ax = plt.subplot(2,totalCols,(3,4))
 ax.scatter(x = groundTruth, y = prediction, marker = ".")
 ax.plot([0,4],[0,4],color = '#04D8B2')
 plt.xlim([np.min(groundTruth),np.max(groundTruth)])
 plt.ylim([np.min(prediction),np.max(prediction)])
-# ax.set_aspect('equal')
 plt.title('Prediction vs ground truth')
 plt.xlabel('ground truth')
 plt.ylabel('prediction')
@@ -137,43 +161,33 @@ plt.grid()
 plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['train', 'val'], loc='upper right')
-# plt.ylim([0,1000])
 
 
-# Plot prediction vs actual error
-# absErr = pd.DataFrame((yFI_actual - predCNNFI_nonStnd).reshape(100,-1))
+# Prediction vs ground truth error distribution
 absErr = np.array(groundTruth) - np.array(prediction)
 absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
 
 ax = plt.subplot(2,totalCols,(9,10))
-# sns.displot(absErrDfFlat, kind="kde")
 sns.histplot(absErrDfFlat)
 plt.grid()
 plt.xlabel('Absolute Error')
-plt.title('Distribution of aboslute errors')
+plt.title('Distribution of absolute errors')
 plt.legend([],[], frameon=False)
 
 # Plot prediction vs actual field
-sampleNum = 1
-
+sampleNum = 1 # Choose the sample (out of 100) to be plotted
 grid = [inputDat[0,:,:,1],inputDat[0,:,:,2]] # Grid for plotting
 
-ax = plt.subplot(2,totalCols,11)
+ax = plt.subplot(2,totalCols,11) # Ground truth
 CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:])
-# plt.xlabel('x')
-# plt.ylabel('y')
-# fig.colorbar(CS)
 plt.title('ground truth')
 
-ax = plt.subplot(2,totalCols,12)
+ax = plt.subplot(2,totalCols,12) # Prediction
 CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:],  levels = CS.levels)
-# plt.xlabel('x')
-# plt.ylabel('y')
 fig.colorbar(CS2)
 plt.title('prediction')
 
 fig.get_constrained_layout
-
 
 plt.show()
 
@@ -184,31 +198,6 @@ plt.show()
 # with open(gridPath, 'w') as f: # Dump data to json file at specified path
 #     json.dump(gridout, f, indent=2)
 
-
-
-# # Plot prediction vs actual field
-# sampleNum = 1
-
-# grid = [inputDat[0,:,:,1],inputDat[0,:,:,2]] # Grid for plotting
-
-# fig, axs = plt.subplots(1,2 ,figsize=[10, 5]) # Create subplots to fit output fields
-# ax4 = plt.subplot(2,3,4)
-# CS = ax1.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:], cmap = 'jet')
-# plt.xlabel('x')
-# plt.ylabel('y')
-# fig.colorbar(CS)
-# plt.title('ground truth')
-
-# ax5 = plt.subplot(2,3,5)
-# CS2 = ax2.contourf(grid[0],grid[1],prediction[sampleNum,:,:], cmap = 'jet', levels = CS.levels)
-# plt.xlabel('x')
-# plt.ylabel('y')
-# fig.colorbar(CS2)
-# plt.title('prediction')
-
-
-
-# plt.show()
 
 
 
