@@ -42,8 +42,8 @@ trainEpochs = 500 # Maximum number of epochs for trained models
 # Results:
 resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
 # File indicating which models to be plotted together and which hyperparameters they are sweeps of
-sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\compareIndex_fineTune_2.csv'
-
+# sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\compareIndex_fineTune_2.csv'
+sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\crossVal2105\compareIndex_crossVal2105.csv'
 baselineIdx = 1 # Index of reference model
 
 # Legacy method of grouping models and displaying them next to each other
@@ -74,17 +74,19 @@ argParser.add_argument("-rp", "--repeats", help="Number of repeats of job")
 
 args = argParser.parse_args()
 jobName = args.jobname
-repeats = int(args.repeats)
+repeats = args.repeats
 
 # Format paths for data loading
 resultPath = os.path.join(resultPath, '{jn}'.format(jn=jobName))
-if repeats is not None: # if there are several repeats (should usually be the case)
+if args.repeats is not None: # if there are several repeats (should usually be the case)
+    repeats = int(repeats)
     temp = []
     for i in range(repeats):
         temp += [os.path.join(resultPath + str(i+1), 'dataout')] # Repeats are 1-indexed
     resultPath = temp
 else:
-    resultPath = os.path.join(resultPath, 'dataout')
+    repeats = 1
+    resultPath = [os.path.join(resultPath, 'dataout')]
 
 #####################################################################
 # Data import and formatting
@@ -92,27 +94,47 @@ else:
 
 # Number of models per repeat
 numModels = len([entry for entry in os.listdir(resultPath[0]) if 'predictions_{jn}'.format(jn=jobName) in entry])
-print(numModels)
 
 for i in range(repeats): # For each repeat (1=indexed)
     for j in range(numModels): # For each model (1-indexed)
         print('Now loading repeat {rp} model number {num}'.format(rp = i+1, num = j+1))
 
-        histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(jn=jobName, rp = i+1, num = j+1) # Naming of file out
+        if repeats == 1:
+            rpName = ''
+        else:
+            rpName = i+1
+
+        histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
         histOutPath = os.path.join(resultPath[i],histOutName)
-        predOutName = 'predictions_{jn}{rp}_{num}.json'.format(jn=jobName, rp = i+1, num = j+1) # Naming of file out
+        predOutName = 'predictions_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
         predOutPath = os.path.join(resultPath[i],predOutName)
-        gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(jn=jobName, rp = i+1, num = j+1) # Naming of file out
+        predOutName_val = 'predictions_val_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
+        predOutPath_val = os.path.join(resultPath[i],predOutName_val)
+        gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
         gtOutPath = os.path.join(resultPath[i],gtOutName)
-        paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(jn=jobName, rp = i+1, num = j+1) # Naming of file out
+        gtOutName_val = 'groundTruth_val_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Ground truths
+        gtOutPath_val = os.path.join(resultPath[i],gtOutName_val)
+        paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
         paramOutPath = os.path.join(resultPath[i],paramOutName)
 
         with open(histOutPath) as json_file: # load into dict
             history = json.load(json_file)
         with open(predOutPath) as json_file: # load into dict
             prediction = np.array(json.load(json_file))
+        if os.path.isfile(predOutPath_val):
+            with open(predOutPath_val) as json_file: # load into dict
+                prediction_val = np.array(json.load(json_file))
+        else:
+            prediction_val = None
+            print('No file for validation data predictions found')
         with open(gtOutPath) as json_file: # load into dict
             groundTruth = np.array(json.load(json_file))
+        if os.path.isfile(gtOutPath_val):
+            with open(gtOutPath_val) as json_file: # load into dict
+                groundTruth_val = np.array(json.load(json_file))
+        else:
+            groundTruth_val = None
+            print('No file for validation data ground truth found')
         with open(paramOutPath) as json_file: # load into dict
             parameter = json.load(json_file)
             parameter = json.loads(parameter) # reformat
@@ -122,8 +144,13 @@ for i in range(repeats): # For each repeat (1=indexed)
             valHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of validation histories
             parameters = [] # Array of parameters
             RMSEs = np.empty(shape = (repeats, numModels)) # Array of RMSEs
+            RMSEs_val = np.empty(shape = (repeats, numModels)) # Array of RMSEs
             groundTruths = np.empty(shape = (repeats, numModels, groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])) # Array of ground truths
+            if groundTruth_val is not None:
+                groundTruths_val = np.empty(shape = (repeats, numModels, groundTruth_val.shape[0],groundTruth_val.shape[1], groundTruth_val.shape[2])) # Array of ground truths for validation data
             predictions = np.empty(shape = (repeats, numModels, prediction.shape[0],prediction.shape[1], prediction.shape[2])) # Array of predictions
+            if prediction_val is not None:
+                predictions_val = np.empty(shape = (repeats, numModels, prediction_val.shape[0],prediction_val.shape[1], prediction_val.shape[2])) # Array of predictions for validation data
 
         loss = history['loss'] # Loss history
         val_loss = history['val_loss'] # Validation loss history
@@ -137,11 +164,20 @@ for i in range(repeats): # For each repeat (1=indexed)
         valHist[i,j] = val_loss
         parameters.append(parameter)
         groundTruths[i,j] = groundTruth
+        if groundTruth_val is not None:
+            groundTruths_val[i,j] = groundTruth_val
         predictions[i,j] = prediction
+        if prediction_val is not None:
+            predictions_val[i,j] = prediction_val
 
         RMSE = tf.keras.metrics.RootMeanSquaredError()
         RMSE.update_state(groundTruth,prediction)
         RMSEs[i,j] = RMSE.result().numpy()
+
+        if groundTruth_val is not None:
+            RMSE_val = tf.keras.metrics.RootMeanSquaredError()
+            RMSE_val.update_state(groundTruth_val,prediction_val)
+            RMSEs_val[i,j] = RMSE_val.result().numpy()
 
 # Convert parameter dictionaries to dataframe 
 parameters = pd.DataFrame.from_dict(parameters)
@@ -154,7 +190,12 @@ parameters.index += 1 # Change to be 1-indexed as the models are this...
 # RMSE plot of all models for spotting errors and trends
 axis = plt.subplot(1,1,1)
 plt.grid()
-g = sns.boxplot(ax=axis, data=RMSEs)
+g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict(color="red", alpha=0.7))
+if groundTruth_val is not None:
+    h = sns.boxplot(ax=axis, data=RMSEs_val, medianprops=dict(color="blue", alpha=0.7))
+    legend_elements = [matplotlib.lines.Line2D([0], [0], color='red', lw=4, label='All data'),
+    matplotlib.lines.Line2D([0], [0], color='blue', lw=4, label='Validation data')]
+    axis.legend(handles=legend_elements)
 plt.title('RMSE for each model, all training repeats')
 plt.ylabel('RMSE')
 plt.xlabel('Model number')
@@ -195,7 +236,10 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
     fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
     fig.suptitle(figname, fontsize=16)
 
-    RMSE_limits = [np.min(RMSEs[:,sweep[:]-1]),np.max(RMSEs[:,sweep[:]-1])] # x axis limits for RMSE plotS
+    if groundTruth_val is not None:
+        RMSE_limits = [np.min([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]]),np.max([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]])] # x axis limits for RMSE plotS
+    else:
+        RMSE_limits = [np.min(RMSEs[:,sweep[:]-1]),np.max(RMSEs[:,sweep[:]-1])] # x axis limits for RMSE plotS
     # contourLim = np.max(np.square(predictions[0, sweep][sampleNum,:,:]-groundTruths[0, sweep][sampleNum,:,:])) # take 1st repeat only, samplenum is specimen out of 100
 
     # For each model in the given sweep
@@ -245,7 +289,9 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         ######### RMSE plot
         plt.style.use("seaborn-v0_8-colorblind")
         ax = plt.subplot(len(sweep), columns,(i*columns+2))
-        g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5) # Remember the models are 1-indexed
+        g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="red", alpha=0.7)) # Remember the models are 1-indexed
+        if groundTruth_val is not None:
+            h = sns.boxplot(ax=ax, data=RMSEs_val[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="blue", alpha=0.7)) # Remember the models are 1-indexed
         ax.grid()
         if i == 0:
             plt.title('RMSE')
@@ -253,7 +299,9 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         ax.grid(axis = "x", which = "minor")
         ax.minorticks_on()
         # Annotate RMSE plot with mean RMSE of all model repeats
-        ax.annotate('{r}'.format(r = round(np.mean(RMSEs[:,sweep[i]-1]), 4)), xy = (0.5,0.1),xycoords = 'axes fraction', weight='bold', ha = 'center')
+        ax.annotate('Mean={r}'.format(r = round(np.mean(RMSEs[:,sweep[i]-1]), 4)), xy = (0.5,0.8),xycoords = 'axes fraction', weight='bold', ha = 'center',color="red")
+        if groundTruth_val is not None:
+            ax.annotate('Val Mean={r}'.format(r = round(np.mean(RMSEs_val[:,sweep[i]-1]), 4)), xy = (0.5,0.1),xycoords = 'axes fraction', weight='bold', ha = 'center',color="blue")
         # plt.ylabel('RMSE')
         # plt.xlabel('Model number')
         # g.set_xticks(range(numModels))
@@ -443,5 +491,5 @@ plt.show()
 # plt.grid()
 
 
-
-print(RMSEs)
+if groundTruth_val is not None:
+    print('Mean of validation RMSE: {r}'.format(r = np.mean(RMSE_val)))

@@ -1,9 +1,9 @@
 #####################################################################
 # Description
 #####################################################################
-# This script is run on the computing cluster (HPC) and contains the
-# model definition and training processes. It must be pointed to a 
-# sweep definition csv wherein the model hyperparamters are tabulated
+# This script is run on the computing cluster (HPC) and allows
+# training of a single model several times with the intention of 
+# performance validation
 
 #####################################################################
 # Imports
@@ -40,18 +40,22 @@ argParser = argparse.ArgumentParser()
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
 argParser.add_argument("-j", "--jobname", help="Job name") # Name of job passed when calling script
 args = argParser.parse_args()
-sweepIdx = int(args.parallel)
+# sweepIdx = int(args.parallel)
+sweepIdx = 1
+kFold = int(args.parallel)
 
 # Sweep definition of hyperparameters
-sweepPath = 'sweep_definition_fineTune_2.csv' # Name of sweep definition file
+sweepPath = 'sweep_definition_crossVal.csv' # Name of sweep definition file
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
 
 # Various settings
+k = 10 # Number of folds in cross validation
 numSamples = 100 # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
-trainValRatio = params['trainValRatio'] # Training and validation data split ratio
+# trainValRatio = params['trainValRatio'] # Training and validation data split ratio
+trainValRatio = (k-1)/k # Training and validation data split ratio
 train_length = round(numSamples * trainValRatio) # Number of training samples 
 epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
@@ -224,11 +228,29 @@ yFI = samples2D[:,:,:,10] # Labels for failure index
 ds_e22 = tf.data.Dataset.from_tensor_slices((X, ye22))
 ds_FI = tf.data.Dataset.from_tensor_slices((X, yFI))
 
-# Split into training and validation datasets
-train_ds_e22 = ds_e22.take(train_length) # Currently not shuffling beforehand, should be done in the future TODO
-val_ds_e22 = ds_e22.skip(train_length)
-train_ds_FI = ds_FI.take(train_length)
-val_ds_FI = ds_FI.skip(train_length)
+# Split into training and validation datasets using k-fold
+valIdx = int((kFold-1)*(numSamples/k)) # The k fold variable is 1-indexed, valIdx marks the start of the validation set in this fold
+
+val_ds_e22 = ds_e22.skip(valIdx) # Skip until the point where the validation set starts
+val_ds_e22 = val_ds_e22.take(int(numSamples/k)) # Take the validation set
+val_ds_FI = ds_FI.skip(valIdx) # Skip until the point where the validation set starts
+val_ds_FI = val_ds_FI.take(int(numSamples/k)) # Take the validation set
+
+train_ds_e22_first = ds_e22.take(valIdx) # Take samples up to the start of the validation set
+train_ds_e22_second = ds_e22.skip(int(valIdx+(numSamples/k))) # Take samples after the end of the validation set
+train_ds_e22 = train_ds_e22_first.concatenate(train_ds_e22_second) # Concatenate the two parts of the training dataset
+
+train_ds_FI_first = ds_FI.take(valIdx) # Take samples up to the start of the validation set
+train_ds_FI_second = ds_FI.skip(int(valIdx+(numSamples/k))) # Take samples after the end of the validation set
+train_ds_FI = train_ds_FI_first.concatenate(train_ds_FI_second) # Concatenate the two parts of the training dataset
+
+
+# train_ds_e22 = ds_e22.take(train_length)
+
+# train_ds_e22 = ds_e22.take(train_length) # Currently not shuffling beforehand, should be done in the future TODO
+# val_ds_e22 = ds_e22.skip(train_length)
+# train_ds_FI = ds_FI.take(train_length)
+# val_ds_FI = ds_FI.skip(train_length)
 
 # Training dataset preprocessing
 train_ds_e22 = train_ds_e22.cache() # cache dataset for it to be used over iterations
@@ -504,4 +526,3 @@ with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
 
 with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(inputDat.tolist(), f, indent=2)
-

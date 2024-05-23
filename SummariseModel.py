@@ -54,7 +54,14 @@ argParser.add_argument("-i", "--jobindex", help="Index of job to summarise") # p
 
 args = argParser.parse_args()
 jobName = args.jobname # Jobname e.g. "sweep1403repeat"
-repeat = args.repeat # Number of repeats done in training
+
+
+if args.repeat is not None: # if there are several repeats (should usually be the case for training sweeps)
+    repeat = args.repeat # repeat to summarise
+else:
+    repeat = ''
+
+
 jobIndex = int(args.jobindex) # Index of the model to summarise (see sweep definition csv file for indices)
 
 resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
@@ -64,8 +71,12 @@ histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num
 histOutPath = os.path.join(resultPath,histOutName)
 predOutName = 'predictions_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions
 predOutPath = os.path.join(resultPath,predOutName)
+predOutName_val = 'predictions_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions
+predOutPath_val = os.path.join(resultPath,predOutName_val)
 gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths
 gtOutPath = os.path.join(resultPath,gtOutName)
+gtOutName_val = 'groundTruth_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths
+gtOutPath_val = os.path.join(resultPath,gtOutName_val)
 paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Hyperparameters of model
 paramOutPath = os.path.join(resultPath,paramOutName)
 inputOutName = 'input_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Inputs for model
@@ -81,9 +92,23 @@ with open(paramOutPath) as json_file: # load into dict
 
 with open(predOutPath) as json_file: # load into dict
     prediction = np.array(json.load(json_file))
+    
+if os.path.isfile(predOutPath_val):
+    with open(predOutPath_val) as json_file: # load into dict
+        prediction_val = np.array(json.load(json_file))
+else:
+    prediction_val = None
+    print('No file for validation data predictions found')
 
 with open(gtOutPath) as json_file: # load into dict
     groundTruth = np.array(json.load(json_file))
+
+if os.path.isfile(gtOutPath_val):
+    with open(gtOutPath_val) as json_file: # load into dict
+        groundTruth_val = np.array(json.load(json_file))
+else:
+    groundTruth_val = None
+    print('No file for validation data ground truth found')
 
 with open(inputOutPath) as json_file: # load into dict
     inputDat = np.array(json.load(json_file))
@@ -94,8 +119,11 @@ with open(inputOutPath) as json_file: # load into dict
 
 RMSE = tf.keras.metrics.RootMeanSquaredError()
 RMSE.update_state(groundTruth,prediction)
-
 print('RMSE  = ' + str(RMSE.result().numpy()))
+if groundTruth_val is not None:
+    RMSE_val = tf.keras.metrics.RootMeanSquaredError()
+    RMSE_val.update_state(groundTruth_val,prediction_val)
+    print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
 
 #####################################################################
 # Model summary figure
