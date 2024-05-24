@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import seaborn as sns
 # sweepIdx = int('1')
 
 # # Sweep parameters
@@ -101,4 +102,12 @@ train_ds_FI_second = ds_FI.skip(int(valIdx+(numSamples/k))) # Take samples after
 train_ds_FI = train_ds_FI_first.concatenate(train_ds_FI_second) # Concatenate the two parts of the training dataset
 for x in train_ds_FI:
     print(x)
+# %%
+tips = sns.load_dataset("tips")
+# sns.kdeplot(data=tips)
+
+
+maxPointError =[-0.37377048, -0.37455583,  0.02026224]
+maxPointErrorDf = pd.DataFrame(maxPointError)
+
 # %%

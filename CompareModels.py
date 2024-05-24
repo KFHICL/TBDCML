@@ -287,7 +287,8 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             )
 
         ######### RMSE plot
-        plt.style.use("seaborn-v0_8-colorblind")
+        # plt.style.use("seaborn-v0_8-colorblind")
+        plt.style.use("viridis")
         ax = plt.subplot(len(sweep), columns,(i*columns+2))
         g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="red", alpha=0.7)) # Remember the models are 1-indexed
         if groundTruth_val is not None:
@@ -329,7 +330,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
 
         ######## Training history plot
-        cmap = matplotlib.colormaps['plasma']
+        cmap = matplotlib.colormaps['viridis']
         # Take colors at regular intervals spanning the colormap for each repeat
         colors = cmap(np.linspace(0, 1, repeats))
         for k in range(repeats):
