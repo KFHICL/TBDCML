@@ -144,7 +144,13 @@ for i in range(repeats): # For each repeat (1=indexed)
             valHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of validation histories
             parameters = [] # Array of parameters
             RMSEs = np.empty(shape = (repeats, numModels)) # Array of RMSEs
+            MAEs = np.empty(shape = (repeats, numModels)) # Array of MSEs
+            R2s = np.empty(shape = (repeats, numModels)) # Array of R squared
+
             RMSEs_val = np.empty(shape = (repeats, numModels)) # Array of RMSEs
+            MAEs_val = np.empty(shape = (repeats, numModels)) # Array of MSEs
+            R2s_val = np.empty(shape = (repeats, numModels)) # Array of R squared
+
             groundTruths = np.empty(shape = (repeats, numModels, groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])) # Array of ground truths
             if groundTruth_val is not None:
                 groundTruths_val = np.empty(shape = (repeats, numModels, groundTruth_val.shape[0],groundTruth_val.shape[1], groundTruth_val.shape[2])) # Array of ground truths for validation data
@@ -174,10 +180,26 @@ for i in range(repeats): # For each repeat (1=indexed)
         RMSE.update_state(groundTruth,prediction)
         RMSEs[i,j] = RMSE.result().numpy()
 
+        MAE = tf.keras.metrics.MeanAbsoluteError()
+        MAE.update_state(groundTruth,prediction)
+        MAEs[i,j] = MAE.result().numpy()
+
+        R2 = tf.keras.metrics.R2Score()
+        R2.update_state(groundTruth.reshape(groundTruth.shape[0],-1),prediction.reshape(prediction.shape[0],-1))
+        R2s[i,j] = R2.result().numpy()
+
         if groundTruth_val is not None:
             RMSE_val = tf.keras.metrics.RootMeanSquaredError()
             RMSE_val.update_state(groundTruth_val,prediction_val)
             RMSEs_val[i,j] = RMSE_val.result().numpy()
+
+            MAE_val = tf.keras.metrics.MeanAbsoluteError()
+            MAE_val.update_state(groundTruth_val,prediction_val)
+            MAEs_val[i,j] = MAE_val.result().numpy()
+
+            R2_val = tf.keras.metrics.R2Score()
+            R2_val.update_state(groundTruth_val.reshape(groundTruth_val.shape[0],-1),prediction_val.reshape(prediction_val.shape[0],-1))
+            R2s_val[i,j] = R2_val.result().numpy()
 
 # Convert parameter dictionaries to dataframe 
 parameters = pd.DataFrame.from_dict(parameters)
@@ -189,13 +211,45 @@ parameters.index += 1 # Change to be 1-indexed as the models are this...
 
 # RMSE plot of all models for spotting errors and trends
 axis = plt.subplot(1,1,1)
-plt.grid()
-g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict(color="red", alpha=0.7))
 if groundTruth_val is not None:
-    h = sns.boxplot(ax=axis, data=RMSEs_val, medianprops=dict(color="blue", alpha=0.7))
-    legend_elements = [matplotlib.lines.Line2D([0], [0], color='red', lw=4, label='All data'),
-    matplotlib.lines.Line2D([0], [0], color='blue', lw=4, label='Validation data')]
-    axis.legend(handles=legend_elements)
+    # Format into dataframe
+    modelNums = np.linspace(1,numModels,numModels)
+    modelIdx = np.tile(modelNums,repeats)
+    RMSEDf = pd.DataFrame(data = RMSEs.reshape(-1))
+    RMSEDf.columns = ['RMSE']
+    RMSEDf['Model Number'] = modelIdx
+
+    RMSEDf_val = pd.DataFrame(data = RMSEs_val.reshape(-1))
+    RMSEDf_val.columns = ["RMSE"]
+    RMSEDf_val['Model Number'] = modelIdx
+
+    # RMSEDf.index += 1
+    # RMSEDf_val.index += 1
+    RMSEDf['Specimens']='All data'
+    # RMSEDf['Model Number']=RMSEDf.index
+    RMSEDf_val['Specimens']='Validation data'
+    # RMSEDf_val['Model Number']=RMSEDf_val.index
+    RMSEsDf = pd.concat([RMSEDf, RMSEDf_val])
+    # print(RMSEsDf)
+    g = sns.boxplot(ax=axis, data=RMSEsDf, x="Model Number", y="RMSE", hue="Specimens", fill=True, medianprops=dict(alpha=0.7))
+    # d = {'All Data': RMSEs.reshape(-1).tolist(), 'Validation Data': RMSEs_val.reshape(-1).tolist()}
+    # print(d)
+    # RMSEsDf = pd.DataFrame(data = d)
+    # print(RMSEsDf.head)
+    # RMSEDf_val = pd.Series(RMSEs_val, name='Validation data')
+    # RMSEsDf = pd.concat([RMSEDf, RMSEDf_val], axis=1)
+    print(RMSEs)
+else:
+    g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict( alpha=0.7))
+    print(RMSEs)
+plt.grid()
+
+# g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict(color="red", alpha=0.7))
+# if groundTruth_val is not None:
+#     h = sns.boxplot(ax=axis, data=RMSEs_val, medianprops=dict(color="blue", alpha=0.7))
+#     legend_elements = [matplotlib.lines.Line2D([0], [0], color='red', lw=4, label='All data'),
+#     matplotlib.lines.Line2D([0], [0], color='blue', lw=4, label='Validation data')]
+#     axis.legend(handles=legend_elements)
 plt.title('RMSE for each model, all training repeats')
 plt.ylabel('RMSE')
 plt.xlabel('Model number')
@@ -287,12 +341,24 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             )
 
         ######### RMSE plot
-        # plt.style.use("seaborn-v0_8-colorblind")
-        plt.style.use("viridis")
-        ax = plt.subplot(len(sweep), columns,(i*columns+2))
-        g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="red", alpha=0.7)) # Remember the models are 1-indexed
+        plt.style.use("seaborn-v0_8-colorblind")
         if groundTruth_val is not None:
-            h = sns.boxplot(ax=ax, data=RMSEs_val[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="blue", alpha=0.7)) # Remember the models are 1-indexed
+            # Format into dataframe
+            RMSEDf = pd.Series(RMSEs[:,sweep[i]-1].reshape(-1), name='All data')
+            RMSEDf_val = pd.Series(RMSEs_val[:,sweep[i]-1].reshape(-1), name='Validation data')
+            RMSEsDf = pd.concat([RMSEDf, RMSEDf_val], axis=1)
+            
+            
+            # h = sns.boxplot(ax=ax, data=RMSEs_val[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="blue", alpha=0.7)) # Remember the models are 1-indexed
+        
+        ax = plt.subplot(len(sweep), columns,(i*columns+2))
+        # g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="red", alpha=0.7)) # Remember the models are 1-indexed
+        if groundTruth_val is not None:
+            g = sns.boxplot(ax=ax, data=RMSEsDf, orient="h", width=0.5, medianprops=dict(alpha=0.7)) # Remember the models are 1-indexed
+        else:
+            g = sns.boxplot(ax=ax, data=RMSEs[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(alpha=0.7)) # Remember the models are 1-indexed
+        # if groundTruth_val is not None:
+        #     h = sns.boxplot(ax=ax, data=RMSEs_val[:,sweep[i]-1], orient="h", width=0.5, medianprops=dict(color="blue", alpha=0.7)) # Remember the models are 1-indexed
         ax.grid()
         if i == 0:
             plt.title('RMSE')
@@ -463,6 +529,46 @@ for i in sweepIdx.index: # Create a figure for each sweep
     sweepnums = np.hstack((baselineIdx,sweepnums))
     sweepPlot(sweep=sweepnums, paramVariables = plotParams, figname = sweepIdx['sweepName'][i])
 
+
+
+
+
+# Heatmap of cross-validation performance metrics (or models)
+if groundTruth_val is not None:
+    
+    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+    fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
+    plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+
+    
+
+    heatMap_models = np.linspace(1,numModels,numModels,dtype = int) # Model numbers
+    heatMap_RMSE = pd.DataFrame(data = np.mean(RMSEs,axis = 0)) # All RMSE data
+    heatMap_RMSE_val = pd.DataFrame(data = np.mean(RMSEs_val,axis = 0)) # Val RMSE data
+    heatMap_MAE = pd.DataFrame(data = np.mean(MAEs,axis = 0)) # All MAE data
+    heatMap_MAE_val = pd.DataFrame(data = np.mean(MAEs_val,axis = 0)) # Validation MAE data
+    heatMap_R2 = pd.DataFrame(data = 1-np.mean(R2s,axis = 0)) # All R squared data
+    heatMap_R2_val = pd.DataFrame(data = 1-np.mean(R2s_val,axis = 0)) # Validation R squared data
+
+    
+    heatmap_data = pd.concat([heatMap_RMSE, heatMap_RMSE_val, heatMap_MAE, heatMap_MAE_val,
+                              heatMap_R2, heatMap_R2_val], axis=1)
+    heatmap_data.columns = [ 'RMSE', 'RMSE Val', 'MAE', 'MAE Val', '1-R^2', '1-R^2 Val']
+    heatmap_data.index = heatMap_models
+    ax = plt.subplot(1,1,1) # 
+    
+    g = sns.heatmap(heatmap_data)
+    # g.legend_.set_title(None)
+    # plt.grid()
+    plt.xlabel('Metric')
+    plt.ylabel('Model')
+    plt.title('Model performance comparison')
+    
+    # print(heatMap_data)
+    # RMSEs
+    # RMSEs_val
+
+
 # sweepPlot(sweep=initialLearnRateIdx, paramVariables = initialLearnRateparamVariables, figname = 'Initial learning rate')
 # sweepPlot(sweep=learnRateDecayIdx, paramVariables = learnRateDecayparamVariables, figname = 'Final learning rate')
 # sweepPlot(sweep=batchSizeIdx, paramVariables = batchSizeparamVariables, figname = 'Batch size')
@@ -492,5 +598,5 @@ plt.show()
 # plt.grid()
 
 
-if groundTruth_val is not None:
-    print('Mean of validation RMSE: {r}'.format(r = np.mean(RMSE_val)))
+# if groundTruth_val is not None:
+#     print('Mean of validation RMSE: {r}'.format(r = np.mean(RMSE_val)))

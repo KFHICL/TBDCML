@@ -42,7 +42,7 @@ import argparse
 # Set matplotlib style
 plt.style.use("seaborn-v0_8-colorblind")
 
-sampleNum = 1 # Choose the sample (out of 100) to be plotted
+sampleNum = 11 # Choose the sample (out of 100) to be plotted
 
 #####################################################################
 # Input parsing and paths to training files
@@ -137,17 +137,19 @@ maxGT = np.zeros(groundTruth.shape[0])
 maxGTIdx = np.zeros((groundTruth.shape[0],2))
 maxGTCoords = np.zeros((groundTruth.shape[0],2))
 
-maxGT_val = np.zeros(groundTruth_val.shape[0])
-maxGTIdx_val = np.zeros((groundTruth_val.shape[0],2))
-maxGTCoords_val = np.zeros((groundTruth_val.shape[0],2))
+if groundTruth_val is not None:
+    maxGT_val = np.zeros(groundTruth_val.shape[0])
+    maxGTIdx_val = np.zeros((groundTruth_val.shape[0],2))
+    maxGTCoords_val = np.zeros((groundTruth_val.shape[0],2))
 
 maxPred = np.zeros(prediction.shape[0])
 maxPredIdx = np.zeros((prediction.shape[0],2))
 maxPredCoords = np.zeros((prediction.shape[0],2))
 
-maxPred_val = np.zeros(prediction_val.shape[0])
-maxPredIdx_val = np.zeros((prediction_val.shape[0],2))
-maxPredCoords_val = np.zeros((prediction_val.shape[0],2))
+if groundTruth_val is not None:
+    maxPred_val = np.zeros(prediction_val.shape[0])
+    maxPredIdx_val = np.zeros((prediction_val.shape[0],2))
+    maxPredCoords_val = np.zeros((prediction_val.shape[0],2))
 
 # Ground truth all samples
 for i in range(groundTruth.shape[0]):
@@ -156,10 +158,11 @@ for i in range(groundTruth.shape[0]):
     maxGTCoords[i] = grid[0,int(maxGTIdx[i,0]),int(maxGTIdx[i,1])],grid[1,int(maxGTIdx[i,0]),int(maxGTIdx[i,1])] # Coordinate of maximum FI value
 
 # Ground truth validation samples
-for i in range(groundTruth_val.shape[0]):
-    maxGT_val[i] = np.max(groundTruth_val[i,:,:]) # Maximum true value
-    maxGTIdx_val[i] = np.unravel_index(groundTruth_val[i].argmax(), groundTruth_val[i].shape) # 2D index of maximum value in ground truth
-    maxGTCoords_val[i] = grid[0,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])],grid[1,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])] # Coordinate of maximum FI value
+if groundTruth_val is not None:
+    for i in range(groundTruth_val.shape[0]):
+        maxGT_val[i] = np.max(groundTruth_val[i,:,:]) # Maximum true value
+        maxGTIdx_val[i] = np.unravel_index(groundTruth_val[i].argmax(), groundTruth_val[i].shape) # 2D index of maximum value in ground truth
+        maxGTCoords_val[i] = grid[0,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])],grid[1,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])] # Coordinate of maximum FI value
 
 # Prediction all samples
 for i in range(prediction.shape[0]):
@@ -168,63 +171,66 @@ for i in range(prediction.shape[0]):
     maxPredCoords[i] = grid[0,int(maxPredIdx[i,0]),int(maxPredIdx[i,1])],grid[1,int(maxPredIdx[i,0]),int(maxPredIdx[i,1])] # Coordinate of maximum FI value
 
 # Prediction validation samples
-for i in range(prediction_val.shape[0]):
-    maxPred_val[i] = np.max(prediction_val[i,:,:]) # Maximum true value
-    maxPredIdx_val[i] = np.unravel_index(prediction_val[i].argmax(), prediction_val[i].shape) # 2D index of maximum value in ground truth
-    maxPredCoords_val[i] = grid[0,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])],grid[1,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])] # Coordinate of maximum FI value
+if groundTruth_val is not None:
+    for i in range(prediction_val.shape[0]):
+        maxPred_val[i] = np.max(prediction_val[i,:,:]) # Maximum true value
+        maxPredIdx_val[i] = np.unravel_index(prediction_val[i].argmax(), prediction_val[i].shape) # 2D index of maximum value in ground truth
+        maxPredCoords_val[i] = grid[0,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])],grid[1,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])] # Coordinate of maximum FI value
+
+# Format Mx FI into dataframes
+maxPredDf = pd.DataFrame(maxPred.reshape(-1))
+maxPredDf.columns = ['Failure Index']
+maxPredDf['Specimens']='All data'
+maxPredDf['Prediction or GT']='Prediction'
+
+if groundTruth_val is not None:
+    maxPredDf_val = pd.DataFrame(maxPred_val.reshape(-1))
+    maxPredDf_val.columns = ['Failure Index']
+    maxPredDf_val['Specimens']='Validation data'
+    maxPredDf_val['Prediction or GT']='Prediction'
+
+maxGTDf = pd.DataFrame(maxGT.reshape(-1))
+maxGTDf.columns = ['Failure Index']
+maxGTDf['Specimens']='All data'
+maxGTDf['Prediction or GT']='Ground Truth'
+
+if groundTruth_val is not None:
+    maxGTDf_val = pd.DataFrame(maxGT_val.reshape(-1))
+    maxGTDf_val.columns = ['Failure Index']
+    maxGTDf_val['Specimens']='Validation data'
+    maxGTDf_val['Prediction or GT']='Ground Truth'
+
+if groundTruth_val is not None:
+    MaxFIDf = pd.concat([maxPredDf, maxPredDf_val, maxGTDf, maxGTDf_val])
+# print(maxPredDf_val.head)
 
 
 # Calculate maximum error in distance and print these
 x_error = maxGTCoords[:,0] - maxPredCoords[:,0]
 y_error = maxGTCoords[:,1] - maxPredCoords[:,1]
 errorDist = np.sqrt(np.square(x_error) + np.square(y_error))
-x_error_val = maxPredCoords_val[:,0] - maxGTCoords_val[:,0]
-y_error_val = maxPredCoords_val[:,1] - maxGTCoords_val[:,1]
-errorDist_val = np.sqrt(np.square(x_error_val) + np.square(y_error_val))
+if groundTruth_val is not None:
+    x_error_val = maxPredCoords_val[:,0] - maxGTCoords_val[:,0]
+    y_error_val = maxPredCoords_val[:,1] - maxGTCoords_val[:,1]
+    errorDist_val = np.sqrt(np.square(x_error_val) + np.square(y_error_val))
 
 # Format into dataframe
 ErrDistDf = pd.Series(errorDist.reshape(-1), name='All data')
-ErrDistDf_val = pd.Series(errorDist_val.reshape(-1), name='Validation data')
-ErrorDistDf = pd.concat([ErrDistDf, ErrDistDf_val], axis=1)
+if groundTruth_val is not None:
+    ErrDistDf_val = pd.Series(errorDist_val.reshape(-1), name='Validation data')
+    ErrorDistDf = pd.concat([ErrDistDf, ErrDistDf_val], axis=1)
 
-# print([str(max(x_error))])
-# print([str(max(y_error))])
-# print([str(max(x_error_val))])
-# print([str(max(y_error_val))])
 
 # Calculate errors in value of maximum point
 maxPointError = maxPred[:] - maxGT[:]
-maxPointError_val = maxPred_val[:] - maxGT_val[:]
+if groundTruth_val is not None:
+    maxPointError_val = maxPred_val[:] - maxGT_val[:]
 # Format into dataframe
 maxErrDf = pd.Series(maxPointError.reshape(-1), name='All data')
-maxErrDf_val = pd.Series(maxPointError_val.reshape(-1), name='Validation data')
-maxPointErrorDf = pd.concat([maxErrDf, maxErrDf_val], axis=1)
+if groundTruth_val is not None:
+    maxErrDf_val = pd.Series(maxPointError_val.reshape(-1), name='Validation data')
+    maxPointErrorDf = pd.concat([maxErrDf, maxErrDf_val], axis=1)
 
-# print([str(max(maxPointError))])
-# print([str(max(maxPointError_val))])
-
-# Intantiate figure
-px = 1/plt.rcParams['figure.dpi']  # pixel in inches
-fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
-totalCols = 2 # figure columns
-plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
-
-# Plot prediction error distributions for maximum FI point
-ax = plt.subplot(2,totalCols,1)
-sns.kdeplot(maxPointErrorDf, ax=ax)
-plt.grid()
-plt.xlabel('FI error')
-plt.title('Distribution of difference between predicted max and actual max FI')
-# plt.legend([],[], frameon=False)
-
-# Plot 
-ax = plt.subplot(2,totalCols,2)
-bins = np.arange(-5, 150, 10)
-sns.histplot(ErrorDistDf, ax=ax, bins = bins)
-plt.grid()
-plt.xlabel('Distance error')
-plt.title('Distribution of error distance to max FI point')
-# plt.legend([],[], frameon=False)
 
 #####################################################################
 # Model summary figure
@@ -285,16 +291,25 @@ plt.grid()
 ax = plt.subplot(2,totalCols,(5,6))
 ax.plot(history['loss'])
 ax.plot(history['val_loss'])
-plt.title('model loss')
+plt.title('Model training history')
 plt.grid()
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'val'], loc='upper right')
+plt.ylabel('Mean Squared Error')
+plt.xlabel('Training Epoch')
+plt.legend(['Training Data', 'Validation Data'], loc='upper right')
 
 
 # Prediction vs ground truth error distribution
 absErr = np.array(groundTruth) - np.array(prediction)
 absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
+absErrDfFlat.columns = ['Error']
+absErrDfFlat['Specimens']='All data'
+
+if groundTruth_val is not None:
+    absErr_val = np.array(groundTruth_val) - np.array(prediction_val)
+    absErrDfFlat_val = pd.DataFrame(absErr_val.reshape(-1))
+    absErrDfFlat_val.columns = ['Error']
+    absErrDfFlat_val['Specimens']='Validation data'
+    absErrorDf = pd.concat([absErrDfFlat, absErrDfFlat_val])
 
 ax = plt.subplot(2,totalCols,(9,10))
 sns.histplot(absErrDfFlat)
@@ -316,7 +331,6 @@ plt.title('prediction')
 
 fig.get_constrained_layout
 
-plt.show()
 
 
 # # Save grid for use in other scripts
@@ -328,3 +342,117 @@ plt.show()
 
 
 
+#####################################################################
+# Misc Plots
+#####################################################################
+
+# Ground truth vs prediction figure
+px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
+plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+
+ax = plt.subplot(1,2,1) # Ground truth
+CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:])
+plt.title('Ground truth')
+ax.set_xticks([])
+ax.set_yticks([])
+
+ax = plt.subplot(1,2,2) # Prediction
+CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:],  levels = CS.levels)
+
+cbar = fig.colorbar(CS2)
+cbar.ax.set_ylabel('Failure Index')
+
+ax.set_xticks([])
+ax.set_yticks([])
+plt.title('Prediction')
+
+fig.get_constrained_layout
+
+# Max FI point error distribution figure
+if groundTruth_val is not None:
+    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+    fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
+    totalCols = 2 # figure columns
+    plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+
+    # Plot prediction error distributions for maximum FI point
+    ax = plt.subplot(2,totalCols,1)
+    sns.kdeplot(maxPointErrorDf, ax=ax)
+    plt.grid()
+    plt.xlabel('FI error')
+    plt.title('Error distribution of peak failure index prediction')
+
+
+    # Plot distribution of error distance to mx FI
+    ax = plt.subplot(2,totalCols,2)
+    bins = np.arange(-5, 150, 10)
+    sns.histplot(ErrorDistDf, ax=ax, bins = bins)
+    plt.grid()
+    plt.xlabel('Distance error')
+    plt.title('Distribution of distance between predicted FI peak and actual FI peak')
+
+    # Plot prediction error distributions for all points
+    ax = plt.subplot(2,totalCols,3)
+    # print(absErrorDf)
+    g = sns.kdeplot(absErrorDf, ax=ax,x='Error', hue = 'Specimens')
+    g.legend_.set_title(None)
+    plt.grid()
+    plt.xlabel('FI error')
+    plt.title('Error distribution of all failure index predictions')
+    
+
+    # Plot of Max FI prediction vs ground truth
+    ax = plt.subplot(2,totalCols,4)
+    bins = np.arange(-5, 150, 10)
+    sns.barplot(MaxFIDf, x="Prediction or GT", y="Failure Index", hue="Specimens", capsize=.3, gap=.1, linewidth=1, edgecolor="0", err_kws={"color": "0", "linewidth": 1}, width=.5)
+    plt.grid()
+    plt.xlabel('Failure Index')
+    plt.title('Maximum failure index of all specimens')
+
+
+# Input data figure
+# Reminder: the header index is the following
+# [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
+# ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
+Eyy = inputDat[sampleNum,:,:,12]
+eyy = inputDat[sampleNum,:,:,4]
+FI = inputDat[sampleNum,:,:,10]
+Exx = inputDat[sampleNum,:,:,11]
+Gxy = inputDat[sampleNum,:,:,13]
+px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
+plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+
+ax = plt.subplot(1,3,1) # E_xx
+CS = ax.contourf(grid[0],grid[1],Exx/(1000))
+cbar = fig.colorbar(CS)
+cbar.ax.set_ylabel('Stiffness [GPa]')
+plt.title('E_xx')
+ax.set_xticks([])
+ax.set_yticks([])
+
+ax = plt.subplot(1,3,2) # E_yy
+CS2 = ax.contourf(grid[0],grid[1],Eyy/1000)
+cbar = fig.colorbar(CS2)
+cbar.ax.set_ylabel('Stiffness [GPa]')
+ax.set_xticks([])
+ax.set_yticks([])
+plt.title('E_yy')
+
+ax = plt.subplot(1,3,3) # Gxy
+CS3 = ax.contourf(grid[0],grid[1],Gxy/1000)
+cbar = fig.colorbar(CS3)
+cbar.ax.set_ylabel('Stiffness [GPa]')
+ax.set_xticks([])
+ax.set_yticks([])
+plt.title('G_xy')
+
+fig.get_constrained_layout
+
+
+
+
+
+
+plt.show()

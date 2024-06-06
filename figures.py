@@ -10,11 +10,11 @@
 #####################################################################
 # Imports
 #####################################################################
-import matplotlib.pyplot as plt
-import numpy as np
-from mpl_toolkits.mplot3d.proj3d import proj_transform
-from mpl_toolkits.mplot3d.axes3d import Axes3D
-from matplotlib.patches import FancyArrowPatch
+# import matplotlib.pyplot as plt
+# import numpy as np
+# from mpl_toolkits.mplot3d.proj3d import proj_transform
+# from mpl_toolkits.mplot3d.axes3d import Axes3D
+# from matplotlib.patches import FancyArrowPatch
 
 
 # class Arrow3D(FancyArrowPatch):
@@ -55,26 +55,69 @@ from matplotlib.patches import FancyArrowPatch
 #####################################################################
 # Settings
 #####################################################################
-plt.style.use("seaborn-v0_8-colorblind") # Consistent colour scheme
-plt.rcParams["figure.autolayout"] = True
-fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
-r = 0.05
-u, v = np.mgrid[0:np.pi/2:30j, 0:np.pi/2:20j]
-x = np.cos(u) * np.sin(v)
-y = np.sin(u) * np.sin(v)
-z = np.cos(v)
-ax.plot_surface(x, y, z, cmap=plt.cm.viridis,alpha=0.6)
+# plt.style.use("seaborn-v0_8-colorblind") # Consistent colour scheme
+# plt.rcParams["figure.autolayout"] = True
+# fig = plt.figure()
+# ax = fig.add_subplot(projection='3d')
+# r = 0.05
+# u, v = np.mgrid[0:np.pi/2:30j, 0:np.pi/2:20j]
+# x = np.cos(u) * np.sin(v)
+# y = np.sin(u) * np.sin(v)
+# z = np.cos(v)
+# ax.plot_surface(x, y, z, cmap=plt.cm.viridis,alpha=0.6)
 
-ax.view_init(20, 20) 
+# ax.view_init(20, 20) 
 
-ax.arrow3D(0,0,0,
-           1,1,1,
-           mutation_scale=20,
-           arrowstyle="-|>")
+# ax.arrow3D(0,0,0,
+#            1,1,1,
+#            mutation_scale=20,
+#            arrowstyle="-|>")
 
-ax.set_xticks([0.5],labels = ['X'])
-ax.set_yticks([0.5],labels = ['S'])
-ax.set_zticks([0.5],labels = ['Y'])
+# ax.set_xticks([0.5],labels = ['X'])
+# ax.set_yticks([0.5],labels = ['S'])
+# ax.set_zticks([0.5],labels = ['Y'])
+# plt.show()
+# %% RMSE comparison of selected models
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+
+r1 = pd.Series([0.13932267,	0.1312578,	0.13298206], name='Baseline')  # Baseline model
+r2 = pd.Series([0.12348962,	0.1269816,	0.12398586], name='Smaller batch size') # Batch size of 4
+r3 = pd.Series([0.12679584,	0.13527173,	0.12746832], name='Larger convolution window') # Kernel of size 4
+r4 = pd.Series([0.10533698,	0.11521004,	0.11750075], name='Longer training') # 4-layer model, longer training with early stopping
+r5 = pd.Series([0.112298615,0.115193091,0.112744972], name='Silu activation function') # Silu activation
+r6 = pd.Series([0.09849966,	0.10574671,	0.10506879], name = 'Final model')
+
+# Final model with 10-fold cross validation:
+r7 = pd.Series([0.09849966,	0.08307547,	0.09041375,	0.09272594,	0.10196505,	0.10486203,	0.10931589,	0.10525837,	0.11376371,	0.10530864,	0.10574671,	0.10420603,	0.08745328,	0.10823236,	0.10726699,	0.10785414,	0.10911972,	0.1154059,	0.10777717,	0.11049049,	0.10506879,	0.11161773,	0.09534075,	0.10674551,	0.09966194,	0.10608425,	0.10241564,	0.11438299,	0.10887758,	0.09320892], name='Final Model Crossvalidation')
+
+
+
+
+# RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6,r7], axis=1)
+RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6], axis=1)
+# print(RMSEPoints)
+px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
+# plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+axis = plt.subplot(1,1,1)
+sns.boxplot(ax=axis, data=RMSEPoints,palette = sns.color_palette('colorblind', 1))
+highlightBox = axis.patches[0]
+highlightBox.set_facecolor('#DE8F05')
+
+highlightBox = axis.patches[-1]
+highlightBox.set_facecolor('#029E73')
+# highlightBox.set_edgecolor('black')
+# highlightBox.set_linewidth(3)
+
+plt.grid()
+plt.ylabel('Root mean squared error')
+plt.title('Performance of selected models during hyperparameter optimisation')
+
 plt.show()
+# sns.pointplot(data=RMSEPoints, x="name", y="body_mass_g")
+
+
+
 # %%
