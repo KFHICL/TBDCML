@@ -43,7 +43,7 @@ args = argParser.parse_args()
 sweepIdx = int(args.parallel)
 
 # Sweep definition of hyperparameters
-sweepPath = 'sweep_definition_fineTune_2.csv' # Name of sweep definition file
+sweepPath = 'sweep_definition_Augmentation.csv' # Name of sweep definition file
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
@@ -136,6 +136,55 @@ def normalise(input_matrix) -> tuple:
         raise Exception("Data to be normalised not of correct shape")
 
     return input_matrix, scaler
+
+
+randAug = tf.random.Generator.from_seed(seed) # Random number generator used for random augmentations
+def augmentImage(inputMatrices,gtMatrix):
+    '''
+  Apply augmentations to increase the dataset size
+
+  Args
+  ----------
+  inputMatrices: the Batchx55x20x3 input
+  gtMatrix: the Batchx55x30 ground truth
+
+  Returns
+  ----------
+  inputMatrices,gtMatrix with consistent augmentations applied
+
+  '''
+    height, width = 55, 20 # image dimensions
+
+    if randAug.normal([]) > 0: # Randomly flip an image horizontally 50% of the time
+      inputMatrices = tf.image.flip_left_right(inputMatrices)
+      gtMatrix = tf.image.flip_left_right(tf.reshape(gtMatrix,[-1,height,width,1]))
+      gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+
+    if  randAug.normal([]) > 0: # Randomly flip an image vertically 50% of the time
+      inputMatrices = tf.image.flip_up_down(inputMatrices)
+      gtMatrix = tf.image.flip_up_down(tf.reshape(gtMatrix,[-1,height,width,1]))
+      gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+
+    if randAug.normal([]) > -0.3: # Scale to a random size within the bounding box and fit to a random location within this
+      crop_width = randAug.uniform(shape=(), minval=math.floor(0.7 * width), maxval=math.floor(0.9 * width), dtype = tf.int32)
+      crop_height = randAug.uniform(shape=(), minval=math.floor(0.7 * height), maxval=math.floor(0.9 * height), dtype = tf.int32)
+      offset_x = randAug.uniform(shape=(), minval=0, maxval=(width - crop_width), dtype = tf.int32)
+      offset_y = randAug.uniform(shape=(), minval=0, maxval=(height - crop_height), dtype = tf.int32)
+
+      inputMatrices = tf.image.crop_to_bounding_box(inputMatrices, offset_y, offset_x, crop_height, crop_width) # Crop to bounding box
+      gtMatrix = tf.image.crop_to_bounding_box(tf.reshape(gtMatrix,[-1,height,width,1]), offset_y, offset_x, crop_height, crop_width)
+      newHeight = crop_height
+      newWidth = crop_width
+      gtMatrix = tf.reshape(gtMatrix,[-1,newHeight,newWidth]) # Reshape ground truth back to not have channels dimensions
+    
+      inputMatrices = tf.image.resize(inputMatrices, (height, width)) # Resize to original size (we want all images same size) - this distorts the image
+      gtMatrix = tf.image.resize(tf.reshape(gtMatrix,[-1,newHeight,newWidth,1]), (height, width), method='nearest')
+      gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+      inputMatrices = tf.cast(inputMatrices, tf.float64)
+      gtMatrix = tf.cast(gtMatrix, tf.float64)
+
+      
+    return (inputMatrices,gtMatrix)
 
 
 def show_prediction(sample, predictions, names, ground_truth, grid):
@@ -234,11 +283,17 @@ val_ds_FI = ds_FI.skip(train_length)
 train_ds_e22 = train_ds_e22.cache() # cache dataset for it to be used over iterations
 train_ds_e22 = train_ds_e22.shuffle(buffer_size=1000).batch(batchSize)
 train_ds_e22 = train_ds_e22.repeat() # Repeats dataset indefinitely to avoid errors
+if params['dsAugmentation'] == 1: # We can apply dataset augmentation to increase the size of it
+   train_ds_e22 = train_ds_e22.map(lambda x,y: augmentImage(x,y)) # Here x and y are input images and ground truth
+
 train_ds_e22 = train_ds_e22.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
+
 
 train_ds_FI = train_ds_FI.cache() # cache dataset for it to be used over iterations
 train_ds_FI = train_ds_FI.shuffle(buffer_size=1000).batch(batchSize) # Shuffle for random order
 train_ds_FI = train_ds_FI.repeat() # Repeats dataset indefinitely to avoid errors
+if params['dsAugmentation'] == 1: # We can apply dataset augmentation to 
+   train_ds_FI = train_ds_FI.map(lambda x,y: augmentImage(x,y))
 train_ds_FI = train_ds_FI.prefetch(buffer_size=1000) # Allows prefetching of elements while later elements are prepared
 
 # Validation dataset preprocessing
@@ -297,71 +352,89 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   # is given in the sweep definition
   input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
   x = input
-  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
     x = tf.keras.layers.BatchNormalization()(x)
   if params['pooling'] == 1:
     x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
   if params['dropout'] > 0:
     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+  encoder1 = x # Use this if skip connections need to be used
+  
 
   if params['layer2'] == 1:
-    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(params['layer2Kernel'], params['layer2Kernel']),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(int(params['layer2Kernel']), int(params['layer2Kernel'])),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
     if params['batchNorm'] == 1:
       x = tf.keras.layers.BatchNormalization()(x)
     if params['pooling'] == 1:
        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
     if params['dropout'] > 0:
        x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
+    encoder2 = x
         
     if params['layer3'] == 1:
-        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(params['layer3Kernel'], params['layer3Kernel']),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(int(params['layer3Kernel']), int(params['layer3Kernel'])),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
         if params['batchNorm'] == 1:
            x = tf.keras.layers.BatchNormalization()(x)
         if params['pooling'] == 1:
            x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
         if params['dropout'] > 0:
            x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
-        
+        encoder3 = x
+
+
         if params['layer4'] == 1:
-            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(params['layer4Kernel'], params['layer4Kernel']),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(int(params['layer4Kernel']), int(params['layer4Kernel'])),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
             if params['batchNorm'] == 1:
                 x = tf.keras.layers.BatchNormalization()(x)
             if params['pooling'] == 1:
                 x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
             if params['dropout'] > 0:
                 x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
-          
+            encoder4 = x
+
+
             if params['layer5'] == 1:
-                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(params['layer5Kernel'], params['layer5Kernel']),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(int(params['layer5Kernel']), int(params['layer5Kernel'])),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                 if params['batchNorm'] == 1:
                     x = tf.keras.layers.BatchNormalization()(x)
                 if params['pooling'] == 1:
                     x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
                 if params['dropout'] > 0:
                     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
-            
+                encoder5 = x
+
+
                 if params['layer6'] == 1:
-                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(params['layer6Kernel'], params['layer6Kernel']),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(int(params['layer6Kernel']), int(params['layer6Kernel'])),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                     if params['batchNorm'] == 1:
                         x = tf.keras.layers.BatchNormalization()(x)
                     if params['pooling'] == 1:
                         x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
                     if params['dropout'] > 0:
                         x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
-                  
+                    encoder6 = x
+                
                     x = tf.keras.layers.Conv2DTranspose(filters = 512, kernel_size = 3,  padding='same')(x)
+                    if params['skipConnections'] == 1:
+                      x = tf.keras.layers.Concatenate()([x, encoder5])
 
 
                 x = tf.keras.layers.Conv2DTranspose(filters = 256, kernel_size = 3,  padding='same')(x)
-
+                if params['skipConnections'] == 1:
+                  x = tf.keras.layers.Concatenate()([x, encoder4])
 
             x = tf.keras.layers.Conv2DTranspose(filters = 128, kernel_size = 3,  padding='same')(x)
-
+            if params['skipConnections'] == 1:
+              x = tf.keras.layers.Concatenate()([x, encoder3])
 
         x = tf.keras.layers.Conv2DTranspose(filters = 64, kernel_size = 3,  padding='same')(x)
+        if params['skipConnections'] == 1:
+          x = tf.keras.layers.Concatenate()([x, encoder2])
 
     x = tf.keras.layers.Conv2DTranspose(filters = 32, kernel_size = 3,  padding='same')(x)
+    if params['skipConnections'] == 1:
+      x = tf.keras.layers.Concatenate()([x, encoder1])
 
   x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = 3,  padding='same')(x)
 

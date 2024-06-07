@@ -12,6 +12,7 @@
 import sys
 
 import os
+import glob
 import random
 import time
 import math
@@ -40,10 +41,10 @@ plt.style.use("seaborn-v0_8-colorblind")
 
 trainEpochs = 500 # Maximum number of epochs for trained models
 # Results:
-resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
 # File indicating which models to be plotted together and which hyperparameters they are sweeps of
 # sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\compareIndex_fineTune_2.csv'
-sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\crossVal2105\compareIndex_crossVal2105.csv'
+
 baselineIdx = 1 # Index of reference model
 
 # Legacy method of grouping models and displaying them next to each other
@@ -77,16 +78,16 @@ jobName = args.jobname
 repeats = args.repeats
 
 # Format paths for data loading
-resultPath = os.path.join(resultPath, '{jn}'.format(jn=jobName))
+resultFolder = os.path.join(resultFolder, '{jn}'.format(jn=jobName))
 if args.repeats is not None: # if there are several repeats (should usually be the case)
     repeats = int(repeats)
     temp = []
     for i in range(repeats):
-        temp += [os.path.join(resultPath + str(i+1), 'dataout')] # Repeats are 1-indexed
+        temp += [os.path.join(resultFolder + str(i+1), 'dataout')] # Repeats are 1-indexed
     resultPath = temp
 else:
     repeats = 1
-    resultPath = [os.path.join(resultPath, 'dataout')]
+    resultPath = [os.path.join(resultFolder, 'dataout')]
 
 #####################################################################
 # Data import and formatting
@@ -521,6 +522,12 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
 
 # Create index of sweeps to be plotted
+resultFolderList = os.listdir(resultFolder+'1') # The first repeat of the sweep contains the files to plot
+
+for fname in resultFolderList:
+    if 'compareIndex' in fname:
+        sweepIdxPath= os.path.join(resultFolder+'1',fname)
+
 sweepIdx = pd.read_csv(sweepIdxPath)
 # toPlot = [9,10,11]
 for i in sweepIdx.index: # Create a figure for each sweep

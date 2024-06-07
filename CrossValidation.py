@@ -319,7 +319,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   # is given in the sweep definition
   input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
   x = input
-  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(params['layer1Kernel'], params['layer1Kernel']),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
     x = tf.keras.layers.BatchNormalization()(x)
   if params['pooling'] == 1:
@@ -328,7 +328,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
 
   if params['layer2'] == 1:
-    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(params['layer2Kernel'], params['layer2Kernel']),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(int(params['layer2Kernel']), int(params['layer2Kernel'])),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
     if params['batchNorm'] == 1:
       x = tf.keras.layers.BatchNormalization()(x)
     if params['pooling'] == 1:
@@ -337,7 +337,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
        x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         
     if params['layer3'] == 1:
-        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(params['layer3Kernel'], params['layer3Kernel']),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(int(params['layer3Kernel']), int(params['layer3Kernel'])),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
         if params['batchNorm'] == 1:
            x = tf.keras.layers.BatchNormalization()(x)
         if params['pooling'] == 1:
@@ -346,7 +346,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
            x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         
         if params['layer4'] == 1:
-            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(params['layer4Kernel'], params['layer4Kernel']),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(int(params['layer4Kernel']), int(params['layer4Kernel'])),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
             if params['batchNorm'] == 1:
                 x = tf.keras.layers.BatchNormalization()(x)
             if params['pooling'] == 1:
@@ -355,7 +355,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                 x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
           
             if params['layer5'] == 1:
-                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(params['layer5Kernel'], params['layer5Kernel']),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(int(params['layer5Kernel']), int(params['layer5Kernel'])),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                 if params['batchNorm'] == 1:
                     x = tf.keras.layers.BatchNormalization()(x)
                 if params['pooling'] == 1:
@@ -364,7 +364,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
             
                 if params['layer6'] == 1:
-                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(params['layer6Kernel'], params['layer6Kernel']),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(int(params['layer6Kernel']), int(params['layer6Kernel'])),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                     if params['batchNorm'] == 1:
                         x = tf.keras.layers.BatchNormalization()(x)
                     if params['pooling'] == 1:

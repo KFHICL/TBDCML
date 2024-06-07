@@ -87,16 +87,16 @@ r2 = pd.Series([0.12348962,	0.1269816,	0.12398586], name='Smaller batch size') #
 r3 = pd.Series([0.12679584,	0.13527173,	0.12746832], name='Larger convolution window') # Kernel of size 4
 r4 = pd.Series([0.10533698,	0.11521004,	0.11750075], name='Longer training') # 4-layer model, longer training with early stopping
 r5 = pd.Series([0.112298615,0.115193091,0.112744972], name='Silu activation function') # Silu activation
-r6 = pd.Series([0.09849966,	0.10574671,	0.10506879], name = 'Final model')
+r6 = pd.Series([0.10191214,	0.0969057,	0.09843335], name = 'Final model')
 
 # Final model with 10-fold cross validation:
-r7 = pd.Series([0.09849966,	0.08307547,	0.09041375,	0.09272594,	0.10196505,	0.10486203,	0.10931589,	0.10525837,	0.11376371,	0.10530864,	0.10574671,	0.10420603,	0.08745328,	0.10823236,	0.10726699,	0.10785414,	0.10911972,	0.1154059,	0.10777717,	0.11049049,	0.10506879,	0.11161773,	0.09534075,	0.10674551,	0.09966194,	0.10608425,	0.10241564,	0.11438299,	0.10887758,	0.09320892], name='Final Model Crossvalidation')
+r7 = pd.Series([0.10891952,	0.10808814,	0.10763301,	0.09643763,	0.09844742,	0.11448937,	0.10834616,	0.10191214,	0.11064257,	0.10917973,	0.10927559,	0.10266547,	0.11111066,	0.10206658,	0.10513075,	0.09653068,	0.10023911,	0.0969057,	0.11271869,	0.11323597,	0.11356502,	0.09728512,	0.09374001,	0.10241187,	0.11276722,	0.10735505,	0.11108778,	0.09843335,	0.11136408,	0.09723821], name='Final Model Crossvalidation')
 
 
 
 
-# RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6,r7], axis=1)
-RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6], axis=1)
+RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6,r7], axis=1)
+# RMSEPoints = pd.concat([r1,r2,r3,r4,r5,r6], axis=1)
 # print(RMSEPoints)
 px = 1/plt.rcParams['figure.dpi']  # pixel in inches
 fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
