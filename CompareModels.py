@@ -20,7 +20,7 @@ import datetime
 import shutil
 import json
 import scipy
-import tensorflow as tf
+import tensorflow as tf # TODO If we want to load models saved on the HPC we need to use legacy keras 2. See test.py for import of this 
 import sklearn
 from sklearn import preprocessing
 import sklearn.model_selection
@@ -31,7 +31,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
-
+import warnings
 import argparse
 
 #####################################################################
@@ -46,6 +46,7 @@ resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Da
 # sweepIdxPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\compareIndex_fineTune_2.csv'
 
 baselineIdx = 1 # Index of reference model
+warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the comparison will be between ALL DATA and validation data even if TRAINING DATA is displayed")
 
 # Legacy method of grouping models and displaying them next to each other
 # initialLearnRateSweeps = np.linspace(2,4,4-2+1, endpoint=True, dtype = int)
@@ -94,6 +95,7 @@ else:
 #####################################################################
 
 # Number of models per repeat
+print(resultPath)
 numModels = len([entry for entry in os.listdir(resultPath[0]) if 'predictions_{jn}'.format(jn=jobName) in entry])
 
 for i in range(repeats): # For each repeat (1=indexed)
@@ -101,7 +103,8 @@ for i in range(repeats): # For each repeat (1=indexed)
         print('Now loading repeat {rp} model number {num}'.format(rp = i+1, num = j+1))
 
         if repeats == 1:
-            rpName = ''
+            # rpName = ''
+            rpName = 1
         else:
             rpName = i+1
 
@@ -170,12 +173,12 @@ for i in range(repeats): # For each repeat (1=indexed)
         trainHist[i,j] = loss
         valHist[i,j] = val_loss
         parameters.append(parameter)
-        groundTruths[i,j] = groundTruth
+        groundTruths[i,j] = groundTruth.reshape(groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])
         if groundTruth_val is not None:
-            groundTruths_val[i,j] = groundTruth_val
-        predictions[i,j] = prediction
+            groundTruths_val[i,j] = groundTruth_val.reshape(groundTruth_val.shape[0],groundTruth_val.shape[1], groundTruth_val.shape[2])
+        predictions[i,j] = prediction.reshape(prediction.shape[0],prediction.shape[1], prediction.shape[2])
         if prediction_val is not None:
-            predictions_val[i,j] = prediction_val
+            predictions_val[i,j] = prediction_val.reshape(prediction_val.shape[0],prediction_val.shape[1], prediction_val.shape[2])
 
         RMSE = tf.keras.metrics.RootMeanSquaredError()
         RMSE.update_state(groundTruth,prediction)
@@ -313,12 +316,14 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             ax.annotate(
                 xy=(0,y+0.5),
                 text=list(parameters[paramVariables].keys())[y],
-                ha='left'
+                ha='left',
+                size=6
             )
             ax.annotate(
                 xy=(1.5,y+0.5),
                 text=list(parameters[paramVariables].loc[sweep[i]].values)[y],
-                ha='left'
+                ha='left',
+                size=6
             )
 
         if i==0:
@@ -418,7 +423,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
         ######## Error distribution plot
         for k in range(repeats):
-            absErr = np.array(groundTruths[k, sweep[i]-1]) - np.array(predictions[k, sweep[i]-1])
+            absErr = np.array(predictions[k, sweep[i]-1]) - np.array(groundTruths[k, sweep[i]-1])
             absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
 
             ax = plt.subplot(len(sweep), columns,i*columns+5)

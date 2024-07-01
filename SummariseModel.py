@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
 import plotly
+import warnings
 
 import argparse
 
@@ -42,8 +43,12 @@ import argparse
 # Set matplotlib style
 plt.style.use("seaborn-v0_8-colorblind")
 
-sampleNum = 11 # Choose the sample (out of 100) to be plotted
+sampleNum = 1 # Choose the sample (out of 100) to be plotted
 
+trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # Path for training data samples
+numSamples = len(os.listdir(trainDat_path)) # number of samples is number of files in datain
+sampleShape = [55,20]
+warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the comparison will be between ALL DATA and validation data even if TRAINING DATA is displayed")
 #####################################################################
 # Input parsing and paths to training files
 #####################################################################
@@ -59,16 +64,23 @@ args = argParser.parse_args()
 jobName = args.jobname # Jobname e.g. "sweep1403repeat"
 
 
+
 if args.repeat is not None: # if there are several repeats (should usually be the case for training sweeps)
     repeat = args.repeat # repeat to summarise
 else:
     repeat = ''
 
 
-jobIndex = int(args.jobindex) # Index of the model to summarise (see sweep definition csv file for indices)
 
-resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
-resultPath = os.path.join(resultPath, '{jn}{rp}'.format(rp = repeat, jn=jobName),'dataout')
+if jobName == 'TESTJOB':
+    resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\dataoutTESTJOB'
+    jobIndex = 1
+else:
+    jobIndex = int(args.jobindex) # Index of the model to summarise (see sweep definition csv file for indices)
+
+    resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+    resultPath = os.path.join(resultPath, '{jn}{rp}'.format(rp = repeat, jn=jobName),'dataout')
+
 
 histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Training history
 histOutPath = os.path.join(resultPath,histOutName)
@@ -126,7 +138,7 @@ grid = np.array([inputDat[0,:,:,1],inputDat[0,:,:,2]])
 # RMSE
 RMSE = tf.keras.metrics.RootMeanSquaredError()
 RMSE.update_state(groundTruth,prediction)
-print('RMSE  = ' + str(RMSE.result().numpy()))
+print('RMSE for training set = ' + str(RMSE.result().numpy()))
 if groundTruth_val is not None:
     RMSE_val = tf.keras.metrics.RootMeanSquaredError()
     RMSE_val.update_state(groundTruth_val,prediction_val)
@@ -151,36 +163,36 @@ if groundTruth_val is not None:
     maxPredIdx_val = np.zeros((prediction_val.shape[0],2))
     maxPredCoords_val = np.zeros((prediction_val.shape[0],2))
 
-# Ground truth all samples
+# Ground truth training samples
 for i in range(groundTruth.shape[0]):
     maxGT[i] = np.max(groundTruth[i,:,:]) # Maximum true value
-    maxGTIdx[i] = np.unravel_index(groundTruth[i].argmax(), groundTruth[i].shape) # 2D index of maximum value in ground truth
+    maxGTIdx[i] = np.unravel_index(groundTruth[i].argmax(), groundTruth[i].shape)[:2] # 2D index of maximum value in ground truth
     maxGTCoords[i] = grid[0,int(maxGTIdx[i,0]),int(maxGTIdx[i,1])],grid[1,int(maxGTIdx[i,0]),int(maxGTIdx[i,1])] # Coordinate of maximum FI value
 
 # Ground truth validation samples
 if groundTruth_val is not None:
     for i in range(groundTruth_val.shape[0]):
         maxGT_val[i] = np.max(groundTruth_val[i,:,:]) # Maximum true value
-        maxGTIdx_val[i] = np.unravel_index(groundTruth_val[i].argmax(), groundTruth_val[i].shape) # 2D index of maximum value in ground truth
+        maxGTIdx_val[i] = np.unravel_index(groundTruth_val[i].argmax(), groundTruth_val[i].shape)[:2] # 2D index of maximum value in ground truth
         maxGTCoords_val[i] = grid[0,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])],grid[1,int(maxGTIdx_val[i,0]),int(maxGTIdx_val[i,1])] # Coordinate of maximum FI value
 
-# Prediction all samples
+# Prediction training samples
 for i in range(prediction.shape[0]):
     maxPred[i] = np.max(prediction[i,:,:]) # Maximum true value
-    maxPredIdx[i] = np.unravel_index(prediction[i].argmax(), prediction[i].shape) # 2D index of maximum value in ground truth
+    maxPredIdx[i] = np.unravel_index(prediction[i].argmax(), prediction[i].shape)[:2] # 2D index of maximum value in ground truth
     maxPredCoords[i] = grid[0,int(maxPredIdx[i,0]),int(maxPredIdx[i,1])],grid[1,int(maxPredIdx[i,0]),int(maxPredIdx[i,1])] # Coordinate of maximum FI value
 
 # Prediction validation samples
 if groundTruth_val is not None:
     for i in range(prediction_val.shape[0]):
         maxPred_val[i] = np.max(prediction_val[i,:,:]) # Maximum true value
-        maxPredIdx_val[i] = np.unravel_index(prediction_val[i].argmax(), prediction_val[i].shape) # 2D index of maximum value in ground truth
+        maxPredIdx_val[i] = np.unravel_index(prediction_val[i].argmax(), prediction_val[i].shape)[:2] # 2D index of maximum value in ground truth
         maxPredCoords_val[i] = grid[0,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])],grid[1,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])] # Coordinate of maximum FI value
 
 # Format Mx FI into dataframes
 maxPredDf = pd.DataFrame(maxPred.reshape(-1))
 maxPredDf.columns = ['Failure Index']
-maxPredDf['Specimens']='All data'
+maxPredDf['Specimens']='Training data'
 maxPredDf['Prediction or GT']='Prediction'
 
 if groundTruth_val is not None:
@@ -191,7 +203,7 @@ if groundTruth_val is not None:
 
 maxGTDf = pd.DataFrame(maxGT.reshape(-1))
 maxGTDf.columns = ['Failure Index']
-maxGTDf['Specimens']='All data'
+maxGTDf['Specimens']='Training data'
 maxGTDf['Prediction or GT']='Ground Truth'
 
 if groundTruth_val is not None:
@@ -215,7 +227,7 @@ if groundTruth_val is not None:
     errorDist_val = np.sqrt(np.square(x_error_val) + np.square(y_error_val))
 
 # Format into dataframe
-ErrDistDf = pd.Series(errorDist.reshape(-1), name='All data')
+ErrDistDf = pd.Series(errorDist.reshape(-1), name='Training data')
 if groundTruth_val is not None:
     ErrDistDf_val = pd.Series(errorDist_val.reshape(-1), name='Validation data')
     ErrorDistDf = pd.concat([ErrDistDf, ErrDistDf_val], axis=1)
@@ -226,7 +238,7 @@ maxPointError = maxPred[:] - maxGT[:]
 if groundTruth_val is not None:
     maxPointError_val = maxPred_val[:] - maxGT_val[:]
 # Format into dataframe
-maxErrDf = pd.Series(maxPointError.reshape(-1), name='All data')
+maxErrDf = pd.Series(maxPointError.reshape(-1), name='Training data')
 if groundTruth_val is not None:
     maxErrDf_val = pd.Series(maxPointError_val.reshape(-1), name='Validation data')
     maxPointErrorDf = pd.concat([maxErrDf, maxErrDf_val], axis=1)
@@ -259,7 +271,7 @@ for y in range(0, nrows): # Loop over all hyperparameters
     ax.annotate( # Value of hyperparameter
         xy=(1,y),
         text=list(parameters.values())[y],
-        ha='left'
+        ha='right'
     )
 
 # Annotate with headers
@@ -293,19 +305,19 @@ ax.plot(history['loss'])
 ax.plot(history['val_loss'])
 plt.title('Model training history')
 plt.grid()
-plt.ylabel('Mean Squared Error')
+plt.ylabel('Loss')
 plt.xlabel('Training Epoch')
 plt.legend(['Training Data', 'Validation Data'], loc='upper right')
 
 
 # Prediction vs ground truth error distribution
-absErr = np.array(groundTruth) - np.array(prediction)
+absErr = np.array(prediction) - np.array(groundTruth)
 absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
 absErrDfFlat.columns = ['Error']
-absErrDfFlat['Specimens']='All data'
+absErrDfFlat['Specimens']='Training data'
 
 if groundTruth_val is not None:
-    absErr_val = np.array(groundTruth_val) - np.array(prediction_val)
+    absErr_val = np.array(prediction_val) - np.array(groundTruth_val)
     absErrDfFlat_val = pd.DataFrame(absErr_val.reshape(-1))
     absErrDfFlat_val.columns = ['Error']
     absErrDfFlat_val['Specimens']='Validation data'
@@ -321,11 +333,11 @@ plt.legend([],[], frameon=False)
 # Plot prediction vs actual field
 
 ax = plt.subplot(2,totalCols,11) # Ground truth
-CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:])
+CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:].reshape(groundTruth.shape[1],-1))
 plt.title('ground truth')
 
 ax = plt.subplot(2,totalCols,12) # Prediction
-CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:],  levels = CS.levels)
+CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:].reshape(prediction.shape[1],-1),  levels = CS.levels)
 fig.colorbar(CS2)
 plt.title('prediction')
 
@@ -352,13 +364,13 @@ fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
 plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
 
 ax = plt.subplot(1,2,1) # Ground truth
-CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:])
+CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:].reshape(groundTruth.shape[1],-1))
 plt.title('Ground truth')
 ax.set_xticks([])
 ax.set_yticks([])
 
 ax = plt.subplot(1,2,2) # Prediction
-CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:],  levels = CS.levels)
+CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:].reshape(prediction.shape[1],-1),  levels = CS.levels)
 
 cbar = fig.colorbar(CS2)
 cbar.ax.set_ylabel('Failure Index')
@@ -400,7 +412,19 @@ if groundTruth_val is not None:
     plt.grid()
     plt.xlabel('FI error')
     plt.title('Error distribution of all failure index predictions')
+    print('median of training error ' + str(np.percentile(absErr,50)))
+    print('median of val error ' + str(np.percentile(absErr_val,50)))
+    print('95 percent of all training error fall between ' + str(np.percentile(absErr,2.5)) + ' and ' + str(np.percentile(absErr,97.5)))
+    print('95 percent of all validation error fall between ' + str(np.percentile(absErr_val,2.5)) + ' and ' + str(np.percentile(absErr_val,97.5)))
+    print('95 percent of all training error is below an absolute value of ' + str(np.percentile(np.absolute(absErr),95)))
+    print('95 percent of all validation error is below an absolute value of ' + str(np.percentile(np.absolute(absErr_val),95)))
+    print('The maximum training error is '+ str(np.max(np.absolute(absErr))))
+    print('The maximum validation error is '+ str(np.max(np.absolute(absErr_val))))
     
+    print('The mean true training failure index is '+str(np.mean(np.array(groundTruth))))
+    print('The mean true validation failure index is '+str(np.mean(np.array(groundTruth_val))))
+    print('The maximum true training failure index is '+str(np.max(np.array(groundTruth))))
+    print('The maximum true validation failure index is '+str(np.max(np.array(groundTruth_val))))
 
     # Plot of Max FI prediction vs ground truth
     ax = plt.subplot(2,totalCols,4)
