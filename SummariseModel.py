@@ -48,7 +48,20 @@ sampleNum = 1 # Choose the sample (out of 100) to be plotted
 trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # Path for training data samples
 numSamples = len(os.listdir(trainDat_path)) # number of samples is number of files in datain
 sampleShape = [55,20]
+# sampleShape = [60,20]
 warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the comparison will be between ALL DATA and validation data even if TRAINING DATA is displayed")
+# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+
+
+
+# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
+# with open(gridPath) as json_file: # load into dict
+#     grid = np.array(json.load(json_file)) # grid for plotting
+
+# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
+# with open(gridPath) as json_file: # load into dict
+#     grid = np.array(json.load(json_file)) # grid for plotting
+
 #####################################################################
 # Input parsing and paths to training files
 #####################################################################
@@ -128,12 +141,20 @@ else:
 with open(inputOutPath) as json_file: # load into dict
     inputDat = np.array(json.load(json_file))
 
+# Load grid
+if "Dataset" in parameters:
+    print(parameters['Dataset'])
+    if not parameters['Dataset']== 'LFC18':
+        gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+    else:
+        gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
+    with open(gridPath) as json_file: # load into dict
+        grid = np.array(json.load(json_file)) # grid for plotting
+
+
 #####################################################################
 # Performance measures calculation
 #####################################################################
-
-# Grid required for plotting
-grid = np.array([inputDat[0,:,:,1],inputDat[0,:,:,2]])
 
 # RMSE
 RMSE = tf.keras.metrics.RootMeanSquaredError()
@@ -144,7 +165,7 @@ if groundTruth_val is not None:
     RMSE_val.update_state(groundTruth_val,prediction_val)
     print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
 
-# Maximum failure index location, Shape: [samples, 55, 20]
+# Maximum failure index location, Shape: [samples, length, width]
 maxGT = np.zeros(groundTruth.shape[0])
 maxGTIdx = np.zeros((groundTruth.shape[0],2))
 maxGTCoords = np.zeros((groundTruth.shape[0],2))
@@ -303,6 +324,7 @@ plt.grid()
 ax = plt.subplot(2,totalCols,(5,6))
 ax.plot(history['loss'])
 ax.plot(history['val_loss'])
+ax.set_yscale('log')
 plt.title('Model training history')
 plt.grid()
 plt.ylabel('Loss')
@@ -439,40 +461,40 @@ if groundTruth_val is not None:
 # Reminder: the header index is the following
 # [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
 # ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
-Eyy = inputDat[sampleNum,:,:,12]
-eyy = inputDat[sampleNum,:,:,4]
-FI = inputDat[sampleNum,:,:,10]
-Exx = inputDat[sampleNum,:,:,11]
-Gxy = inputDat[sampleNum,:,:,13]
-px = 1/plt.rcParams['figure.dpi']  # pixel in inches
-fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
-plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
+# Eyy = inputDat[sampleNum,:,:,12]
+# eyy = inputDat[sampleNum,:,:,4]
+# FI = inputDat[sampleNum,:,:,10]
+# Exx = inputDat[sampleNum,:,:,11]
+# Gxy = inputDat[sampleNum,:,:,13]
+# px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+# fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
+# plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
 
-ax = plt.subplot(1,3,1) # E_xx
-CS = ax.contourf(grid[0],grid[1],Exx/(1000))
-cbar = fig.colorbar(CS)
-cbar.ax.set_ylabel('Stiffness [GPa]')
-plt.title('E_xx')
-ax.set_xticks([])
-ax.set_yticks([])
+# ax = plt.subplot(1,3,1) # E_xx
+# CS = ax.contourf(grid[0],grid[1],Exx/(1000))
+# cbar = fig.colorbar(CS)
+# cbar.ax.set_ylabel('Stiffness [GPa]')
+# plt.title('E_xx')
+# ax.set_xticks([])
+# ax.set_yticks([])
 
-ax = plt.subplot(1,3,2) # E_yy
-CS2 = ax.contourf(grid[0],grid[1],Eyy/1000)
-cbar = fig.colorbar(CS2)
-cbar.ax.set_ylabel('Stiffness [GPa]')
-ax.set_xticks([])
-ax.set_yticks([])
-plt.title('E_yy')
+# ax = plt.subplot(1,3,2) # E_yy
+# CS2 = ax.contourf(grid[0],grid[1],Eyy/1000)
+# cbar = fig.colorbar(CS2)
+# cbar.ax.set_ylabel('Stiffness [GPa]')
+# ax.set_xticks([])
+# ax.set_yticks([])
+# plt.title('E_yy')
 
-ax = plt.subplot(1,3,3) # Gxy
-CS3 = ax.contourf(grid[0],grid[1],Gxy/1000)
-cbar = fig.colorbar(CS3)
-cbar.ax.set_ylabel('Stiffness [GPa]')
-ax.set_xticks([])
-ax.set_yticks([])
-plt.title('G_xy')
+# ax = plt.subplot(1,3,3) # Gxy
+# CS3 = ax.contourf(grid[0],grid[1],Gxy/1000)
+# cbar = fig.colorbar(CS3)
+# cbar.ax.set_ylabel('Stiffness [GPa]')
+# ax.set_xticks([])
+# ax.set_yticks([])
+# plt.title('G_xy')
 
-fig.get_constrained_layout
+# fig.get_constrained_layout
 
 
 

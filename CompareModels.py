@@ -96,7 +96,22 @@ else:
 
 # Number of models per repeat
 print(resultPath)
-numModels = len([entry for entry in os.listdir(resultPath[0]) if 'predictions_{jn}'.format(jn=jobName) in entry])
+
+# Create index of sweeps to be plotted
+resultFolderList = os.listdir(resultFolder+'1') # The first repeat of the sweep contains the files to plot
+
+for fname in resultFolderList:
+    if 'compareIndex' in fname:
+        sweepIdxPath= os.path.join(resultFolder+'1',fname)
+
+for fname in resultFolderList:
+    if 'sweep_definition' in fname:
+        sweepDefPath= os.path.join(resultFolder+'1',fname)
+
+sweepDef= pd.read_csv(sweepDefPath)
+numModels = np.max(sweepDef['Index'])
+# len([entry for entry in os.listdir(resultPath[0]) if 'predictions_{jn}'.format(jn=jobName) in entry])
+
 
 for i in range(repeats): # For each repeat (1=indexed)
     for j in range(numModels): # For each model (1-indexed)
@@ -121,6 +136,30 @@ for i in range(repeats): # For each repeat (1=indexed)
         paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(jn=jobName, rp = rpName, num = j+1) # Naming of file out
         paramOutPath = os.path.join(resultPath[i],paramOutName)
 
+        
+
+
+        if not os.path.isfile(histOutPath):
+            print('DATA MISSING FOR repeat {rp} model number {num}'.format(rp = i+1, num = j+1))
+            # Attempt to load parameters from other repeat
+            success = 0
+            for x in range(repeats):
+                print('Attempting to get parameters from repeat ' + str(x+1))
+                paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(jn=jobName, rp = x+1, num = j+1) # Naming of file out
+                paramOutPath = os.path.join(resultPath[x],paramOutName)
+                if os.path.isfile(paramOutPath):
+                    with open(paramOutPath) as json_file: # load into dict
+                        parameter = json.load(json_file)
+                        parameter = json.loads(parameter) # reformat
+                        parameters.append(parameter)
+                        success = 1
+                        print('Success!')
+                        break
+            if success == 0:
+                raise Exception('No successful repeats for model number {num}'.format( num = j+1))
+
+            continue
+
         with open(histOutPath) as json_file: # load into dict
             history = json.load(json_file)
         with open(predOutPath) as json_file: # load into dict
@@ -144,23 +183,24 @@ for i in range(repeats): # For each repeat (1=indexed)
             parameter = json.loads(parameter) # reformat
         
         if i == 0 and j == 0: # Initialise arrays on first loop
-            trainHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of training histories
-            valHist = np.empty(shape = (repeats, numModels, trainEpochs)) # Array of validation histories
+            trainHist = np.empty(shape = (repeats, numModels, trainEpochs)) * np.nan # Array of training histories
+            valHist = np.empty(shape = (repeats, numModels, trainEpochs)) * np.nan # Array of validation histories
             parameters = [] # Array of parameters
-            RMSEs = np.empty(shape = (repeats, numModels)) # Array of RMSEs
-            MAEs = np.empty(shape = (repeats, numModels)) # Array of MSEs
-            R2s = np.empty(shape = (repeats, numModels)) # Array of R squared
+            # parameters = np.empty(shape = (numModels))
+            RMSEs = np.empty(shape = (repeats, numModels)) * np.nan # Array of RMSEs
+            MAEs = np.empty(shape = (repeats, numModels)) * np.nan # Array of MSEs
+            R2s = np.empty(shape = (repeats, numModels)) * np.nan # Array of R squared
 
-            RMSEs_val = np.empty(shape = (repeats, numModels)) # Array of RMSEs
-            MAEs_val = np.empty(shape = (repeats, numModels)) # Array of MSEs
-            R2s_val = np.empty(shape = (repeats, numModels)) # Array of R squared
+            RMSEs_val = np.empty(shape = (repeats, numModels)) * np.nan # Array of RMSEs
+            MAEs_val = np.empty(shape = (repeats, numModels)) * np.nan # Array of MSEs
+            R2s_val = np.empty(shape = (repeats, numModels)) * np.nan # Array of R squared
 
-            groundTruths = np.empty(shape = (repeats, numModels, groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])) # Array of ground truths
+            groundTruths = np.empty(shape = (repeats, numModels, groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2]))* np.nan  # Array of ground truths
             if groundTruth_val is not None:
-                groundTruths_val = np.empty(shape = (repeats, numModels, groundTruth_val.shape[0],groundTruth_val.shape[1], groundTruth_val.shape[2])) # Array of ground truths for validation data
-            predictions = np.empty(shape = (repeats, numModels, prediction.shape[0],prediction.shape[1], prediction.shape[2])) # Array of predictions
+                groundTruths_val = np.empty(shape = (repeats, numModels, groundTruth_val.shape[0],groundTruth_val.shape[1], groundTruth_val.shape[2]))* np.nan  # Array of ground truths for validation data
+            predictions = np.empty(shape = (repeats, numModels, prediction.shape[0],prediction.shape[1], prediction.shape[2]))* np.nan  # Array of predictions
             if prediction_val is not None:
-                predictions_val = np.empty(shape = (repeats, numModels, prediction_val.shape[0],prediction_val.shape[1], prediction_val.shape[2])) # Array of predictions for validation data
+                predictions_val = np.empty(shape = (repeats, numModels, prediction_val.shape[0],prediction_val.shape[1], prediction_val.shape[2]))* np.nan  # Array of predictions for validation data
 
         loss = history['loss'] # Loss history
         val_loss = history['val_loss'] # Validation loss history
@@ -172,6 +212,7 @@ for i in range(repeats): # For each repeat (1=indexed)
 
         trainHist[i,j] = loss
         valHist[i,j] = val_loss
+
         parameters.append(parameter)
         groundTruths[i,j] = groundTruth.reshape(groundTruth.shape[0],groundTruth.shape[1], groundTruth.shape[2])
         if groundTruth_val is not None:
@@ -234,7 +275,8 @@ if groundTruth_val is not None:
     RMSEDf_val['Specimens']='Validation data'
     # RMSEDf_val['Model Number']=RMSEDf_val.index
     RMSEsDf = pd.concat([RMSEDf, RMSEDf_val])
-    # print(RMSEsDf)
+    RMSEsDf = pd.DataFrame.dropna(RMSEsDf)
+    print(RMSEsDf.to_string())
     g = sns.boxplot(ax=axis, data=RMSEsDf, x="Model Number", y="RMSE", hue="Specimens", fill=True, medianprops=dict(alpha=0.7))
     # d = {'All Data': RMSEs.reshape(-1).tolist(), 'Validation Data': RMSEs_val.reshape(-1).tolist()}
     # print(d)
@@ -242,10 +284,10 @@ if groundTruth_val is not None:
     # print(RMSEsDf.head)
     # RMSEDf_val = pd.Series(RMSEs_val, name='Validation data')
     # RMSEsDf = pd.concat([RMSEDf, RMSEDf_val], axis=1)
-    print(RMSEs)
+    # print(RMSEs)
 else:
     g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict( alpha=0.7))
-    print(RMSEs)
+    # print(RMSEs)
 plt.grid()
 
 # g = sns.boxplot(ax=axis, data=RMSEs, medianprops=dict(color="red", alpha=0.7))
@@ -293,11 +335,10 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
     px = 1/plt.rcParams['figure.dpi']  # pixel in inches
     fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
     fig.suptitle(figname, fontsize=16)
-
     if groundTruth_val is not None:
-        RMSE_limits = [np.min([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]]),np.max([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]])] # x axis limits for RMSE plotS
+        RMSE_limits = [np.nanmin([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]]),np.nanmax([RMSEs[:,sweep[:]-1],RMSEs_val[:,sweep[:]-1]])] # x axis limits for RMSE plotS
     else:
-        RMSE_limits = [np.min(RMSEs[:,sweep[:]-1]),np.max(RMSEs[:,sweep[:]-1])] # x axis limits for RMSE plotS
+        RMSE_limits = [np.nanmin(RMSEs[:,sweep[:]-1]),np.nanmax(RMSEs[:,sweep[:]-1])] # x axis limits for RMSE plotS
     # contourLim = np.max(np.square(predictions[0, sweep][sampleNum,:,:]-groundTruths[0, sweep][sampleNum,:,:])) # take 1st repeat only, samplenum is specimen out of 100
 
     # For each model in the given sweep
@@ -372,9 +413,9 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         ax.grid(axis = "x", which = "minor")
         ax.minorticks_on()
         # Annotate RMSE plot with mean RMSE of all model repeats
-        ax.annotate('Mean={r}'.format(r = round(np.mean(RMSEs[:,sweep[i]-1]), 4)), xy = (0.5,0.8),xycoords = 'axes fraction', weight='bold', ha = 'center',color="red")
+        ax.annotate('Mean={r}'.format(r = round(np.nanmean(RMSEs[:,sweep[i]-1]), 4)), xy = (0.5,0.8),xycoords = 'axes fraction', weight='bold', ha = 'center',color="red")
         if groundTruth_val is not None:
-            ax.annotate('Val Mean={r}'.format(r = round(np.mean(RMSEs_val[:,sweep[i]-1]), 4)), xy = (0.5,0.1),xycoords = 'axes fraction', weight='bold', ha = 'center',color="blue")
+            ax.annotate('Val Mean={r}'.format(r = round(np.nanmean(RMSEs_val[:,sweep[i]-1]), 4)), xy = (0.5,0.1),xycoords = 'axes fraction', weight='bold', ha = 'center',color="blue")
         # plt.ylabel('RMSE')
         # plt.xlabel('Model number')
         # g.set_xticks(range(numModels))
@@ -412,7 +453,9 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
             ax = plt.subplot(len(sweep), columns,i*columns+4)
             ax.plot(trainPlot, color=colors[k])
             ax.plot(valPlot, '--', color=colors[k])
-            plt.ylim([0,0.35])
+            ymean = np.nanmean(trainHist[:,sweep[i]-1])
+            
+        plt.ylim([0,2*ymean])
         plt.grid()
         if i == 0: # headers
             plt.title('model loss')
@@ -424,7 +467,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         ######## Error distribution plot
         for k in range(repeats):
             absErr = np.array(predictions[k, sweep[i]-1]) - np.array(groundTruths[k, sweep[i]-1])
-            absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
+            absErrDfFlat = pd.DataFrame.dropna(pd.DataFrame(absErr.reshape(-1)))
 
             ax = plt.subplot(len(sweep), columns,i*columns+5)
             # sns.displot(absErrDfFlat, kind="kde")
@@ -442,13 +485,29 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
         plt.style.use("seaborn-v0_8-colorblind")
         # Grid: used for plotting only and exported in another script - keep with raw Abaqus files
         # TODO: make a bit more elegant
-        gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
+        if "Dataset" in parameters:
+            print(parameters['Dataset'].loc[sweep[i]])
+            if not parameters['Dataset'].loc[sweep[i]] == 'LFC18':
+                gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+            else:
+                gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
         with open(gridPath) as json_file: # load into dict
             grid = np.array(json.load(json_file)) # grid for plotting
 
+        # Find repeat which is completed for field plot
+        for n in range(repeats):
+            if np.isnan(groundTruths[n, sweep[i]-1][sampleNum,:,:]).any():
+                repeat_field_idx = 0
+            else:
+                repeat_field_idx = n
+                break
+        
+        
+
+
         # Ground truth field
         ax = plt.subplot(len(sweep), columns,i*columns+6)
-        CS = ax.contourf(grid[0],grid[1],groundTruths[0, sweep[i]-1][sampleNum,:,:])
+        CS = ax.contourf(grid[0],grid[1],groundTruths[repeat_field_idx, sweep[i]-1][sampleNum,:,:])
         if i == 0: # header
             plt.title('ground truth')
         ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
@@ -456,7 +515,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
         # Prediction field
         ax = plt.subplot(len(sweep), columns,i*columns+7)
-        CS2 = ax.contourf(grid[0],grid[1],predictions[0, sweep[i]-1][sampleNum,:,:], levels = CS.levels)
+        CS2 = ax.contourf(grid[0],grid[1],predictions[repeat_field_idx, sweep[i]-1][sampleNum,:,:], levels = CS.levels)
         if i == 0: # header
             plt.title('prediction')
         fig.colorbar(CS2)
@@ -465,7 +524,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 
         # Squared error between prediction and ground truth plot
         ax = plt.subplot(len(sweep), columns,i*columns+8)
-        CS3 = ax.contourf(grid[0],grid[1],np.square(predictions[0, sweep[i]-1][sampleNum,:,:]-groundTruths[0, sweep[i]-1][sampleNum,:,:]))
+        CS3 = ax.contourf(grid[0],grid[1],np.square(predictions[repeat_field_idx, sweep[i]-1][sampleNum,:,:]-groundTruths[repeat_field_idx, sweep[i]-1][sampleNum,:,:]))
         if i == 0:
             plt.title('error^2')
         fig.colorbar(CS3)
@@ -526,12 +585,7 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 1):
 # print(RMSEs)
 
 
-# Create index of sweeps to be plotted
-resultFolderList = os.listdir(resultFolder+'1') # The first repeat of the sweep contains the files to plot
 
-for fname in resultFolderList:
-    if 'compareIndex' in fname:
-        sweepIdxPath= os.path.join(resultFolder+'1',fname)
 
 sweepIdx = pd.read_csv(sweepIdxPath)
 # toPlot = [9,10,11]
@@ -555,12 +609,12 @@ if groundTruth_val is not None:
     
 
     heatMap_models = np.linspace(1,numModels,numModels,dtype = int) # Model numbers
-    heatMap_RMSE = pd.DataFrame(data = np.mean(RMSEs,axis = 0)) # All RMSE data
-    heatMap_RMSE_val = pd.DataFrame(data = np.mean(RMSEs_val,axis = 0)) # Val RMSE data
-    heatMap_MAE = pd.DataFrame(data = np.mean(MAEs,axis = 0)) # All MAE data
-    heatMap_MAE_val = pd.DataFrame(data = np.mean(MAEs_val,axis = 0)) # Validation MAE data
-    heatMap_R2 = pd.DataFrame(data = 1-np.mean(R2s,axis = 0)) # All R squared data
-    heatMap_R2_val = pd.DataFrame(data = 1-np.mean(R2s_val,axis = 0)) # Validation R squared data
+    heatMap_RMSE = pd.DataFrame.dropna(pd.DataFrame(data = np.nanmean(RMSEs,axis = 0))) # All RMSE data
+    heatMap_RMSE_val = pd.DataFrame.dropna(pd.DataFrame(data = np.nanmean(RMSEs_val,axis = 0))) # Val RMSE data
+    heatMap_MAE = pd.DataFrame.dropna(pd.DataFrame(data = np.nanmean(MAEs,axis = 0))) # All MAE data
+    heatMap_MAE_val = pd.DataFrame.dropna(pd.DataFrame(data = np.nanmean(MAEs_val,axis = 0))) # Validation MAE data
+    heatMap_R2 = pd.DataFrame.dropna(pd.DataFrame(data = 1-np.nanmean(R2s,axis = 0))) # All R squared data
+    heatMap_R2_val = pd.DataFrame.dropna(pd.DataFrame(data = 1-np.nanmean(R2s_val,axis = 0))) # Validation R squared data
 
     
     heatmap_data = pd.concat([heatMap_RMSE, heatMap_RMSE_val, heatMap_MAE, heatMap_MAE_val,

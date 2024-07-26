@@ -28,6 +28,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 import argparse
 
@@ -48,18 +50,85 @@ sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
 
+# Dataset selection
+if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
+  trainDat_name = 'Gaudron2018' 
+  sampleShape = [55,20]
+  xNames = ['E11','E22','E12'] # Names of input features in input csv
+
+elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
+  trainDat_name = 'MatLabModel2024' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+  trainDat_name = 'MatLabModel2024_200' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+  trainDat_name = 'MatLabModel2024_500' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+  trainDat_name = 'MatLabModel2024_1000' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
+  trainDat_name = 'MatLabModel2024_10000' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000 samples)
+  trainDat_name = 'MatLabModel2024_100000' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+
 # Various settings
-trainDat_path = 'datain' # The data format after extracting from Abaqus
-numSamples = len(os.listdir(trainDat_path)) # Number of data samples (i.e. TBDC specimens)
-sampleShape = [55,20]
-xNames = ['E11','E22','E12'] # Names of input features in input csv
+
 yNames = ['FI'] # Names of ground truth features in input csv
+trainDat_path = os.path.join('datain',trainDat_name)
+numSamples = len(os.listdir(trainDat_path)) # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
 trainValRatio = params['trainValRatio'] # Training and validation data split ratio
 train_length = round(numSamples * trainValRatio) # Number of training samples 
-epochs = 500 # Max epochs for training
+epochs = params['Epochs'] # Max epochs for training
+# epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
-validation_steps = math.ceil((100-train_length) / batchSize)
+validation_steps = math.ceil((numSamples-train_length) / batchSize)
 
 # For reproducible results set a seed
 seed = 0
@@ -107,14 +176,15 @@ def loadSample(path = str):
   sample = pd.read_csv(path)
   headers = sample.columns.values.tolist()
   values = np.array(sample)
+  
+  if "coordinates" in headers: 
+    coordIdx = headers.index("coordinates")
+    if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+      coords = formatCoords(values,coordIdx)
+      values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
 
-  coordIdx = headers.index("coordinates")
-  if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
-     coords = formatCoords(values,coordIdx)
-     values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
-
-  headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
-
+    headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+  headers = np.array(headers)
   return headers, values
 
 
@@ -215,14 +285,54 @@ def show_prediction(sample, predictions, names, ground_truth, grid):
 #####################################################################
 
 # Import all data samples
-for i,file in enumerate(os.listdir(trainDat_path)):
-    filepath = os.path.join(trainDat_path,file)
-    if i==0:
-        headers, samples = loadSample(filepath)
-        samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
-    else:
-        addSamp = loadSample(filepath)[1]
-        samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
+def loadSampleNew(path):
+    # Assuming loadSample uses pandas to read the CSV file
+    # Adjust the delimiter and header options as needed
+    sample = pd.read_csv(path)
+    headers = sample.columns.values.tolist()
+    values = np.array(sample)
+
+    if "coordinates" in headers: 
+      coordIdx = headers.index("coordinates")
+      if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+        coords = formatCoords(values,coordIdx)
+        values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+
+      headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+    headers = np.array(headers)
+    return headers, values
+
+
+def load_all_samples(trainDat_path, numSamples):
+    files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
+    headers_list = []
+    samples_list = []
+
+    def process_file(filepath):
+        headers, values = loadSampleNew(filepath)
+        return headers, values
+
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_file, file): file for file in files}
+        for i, future in enumerate(as_completed(futures)):
+            headers, result = future.result()
+            if i == 0:
+                headers_list = headers  # Use headers from the first file
+            samples_list.append(result)
+            # print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
+
+    samples_array = np.array(samples_list)
+    return headers_list, samples_array
+
+headers, samples = load_all_samples(trainDat_path, numSamples)
+# for i,file in enumerate(os.listdir(trainDat_path)):
+#     filepath = os.path.join(trainDat_path,file)
+#     if i==0:
+#         headers, samples = loadSample(filepath)
+#         samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
+#     else:
+#         addSamp = loadSample(filepath)[1]
+#         samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
 samples_NonStandard = samples
 # Reshape sample variable to have shape (samples, row, column, features)
 samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
@@ -335,7 +445,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   # activation function, and regularizer. After each convolutional layer there may be a batch-
   # normalization layer, a max pooling layer, and a dropout layer. The number of convolutional layers
   # is given in the sweep definition
-  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3) or (height, width, features) in general
   x = input
 
 
@@ -478,15 +588,15 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   # Compile model with the optimizer in the sweep definition
   if params['optimizer'] == 'Adadelta':
-     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule), # Compile
+     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
               loss=lossfunc, 
               metrics=['mean_absolute_error','mean_squared_error'])
   elif params['optimizer'] == 'Nadam':
-     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule), # Compile
+     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
               loss=lossfunc, 
               metrics=['mean_absolute_error','mean_squared_error'])
   else:
-     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule), # Compile
+     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
               loss=lossfunc, 
               metrics=['mean_absolute_error','mean_squared_error'])
 
