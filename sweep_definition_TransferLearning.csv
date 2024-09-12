@@ -1,0 +1,2 @@
+﻿Index,trainValRatio,batchSize,layer1Kernel,conv1Activation,pooling,dropout,layer2,layer2Kernel,conv2Activation,layer3,layer3Kernel,conv3Activation,layer4,layer4Kernel,conv4Activation,layer5,layer5Kernel,conv5Activation,layer6,layer6Kernel,conv6Activation,batchNorm,L1kernel_regularizer,L2kernel_regularizer,optimizer,initial_lr,lr_decay_rate,skipConnections,dsAugmentation,standardisation,loss,ActivationUp,epsilon,Dataset,MC24_Features,Epochs
+1,0.9,10,3,relu,1,0.1,1,3,relu,1,3,relu,1,3,relu,0,3,relu,0,3,relu,0,0,0,Adam,0.001,1,0,0,MinMax,MSE,1,0.001,MC24,Stiffness,1000

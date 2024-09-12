@@ -14,6 +14,7 @@ import sklearn
 from sklearn import preprocessing
 import sklearn.model_selection
 from sklearn.preprocessing import StandardScaler
+from tensorflow.keras import backend as K
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,8 +30,10 @@ import tf_keras as keras # Legacy keras version which is equal to the one on the
 #%% Test model loading 
 # modelPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\fullSweep1106_repeat1\dataout\model_fullSweep1106_repeat1_1.keras"
 # modelPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\dataoutTESTJOB\model_TESTJOB_1.keras"
-# loaded_model = keras.models.load_model(modelPath)
-# loaded_model.summary()
+modelPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\model_MC24CrossValidation2808_1_1.keras"
+
+loaded_model = keras.models.load_model(modelPath)
+loaded_model.summary()
 
 #%% Settings for test script
 sweep_params = pd.read_csv(r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\sweep_definition_test.csv')
@@ -70,7 +73,7 @@ if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
 elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   trainDat_name = 'MatLabModel2024' 
   sampleShape = [60,20]
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417'
+  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417_100Samples'
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -199,13 +202,15 @@ def augmentImage(inputMatrices,gtMatrix):
 
     if randAug.normal([]) > 0: # Randomly flip an image horizontally 50% of the time
       inputMatrices = tf.image.flip_left_right(inputMatrices)
-      gtMatrix = tf.image.flip_left_right(tf.reshape(gtMatrix,[-1,height,width,1]))
-      gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+      gtMatrix = tf.image.flip_left_right(gtMatrix)
+      # gtMatrix = tf.image.flip_left_right(tf.reshape(gtMatrix,[-1,height,width,1]))
+      # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
 
     if  randAug.normal([]) > 0: # Randomly flip an image vertically 50% of the time
       inputMatrices = tf.image.flip_up_down(inputMatrices)
-      gtMatrix = tf.image.flip_up_down(tf.reshape(gtMatrix,[-1,height,width,1]))
-      gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+      gtMatrix = tf.image.flip_up_down(gtMatrix)
+      # gtMatrix = tf.image.flip_up_down(tf.reshape(gtMatrix,[-1,height,width,1]))
+      # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
 
     # We can crop and resize but this messes with the boundary conditions hence not done right now
     # if randAug.normal([]) > 0.67: # Scale to a random size within the bounding box and fit to a random location within this
@@ -317,20 +322,20 @@ def load_all_samples(trainDat_path, numSamples):
     samples_array = np.array(samples_list)
     return headers_list, samples_array
 
-headers, samples = load_all_samples(trainDat_path, numSamples)
+# headers, samples = load_all_samples(trainDat_path, numSamples)
 # print(samples_array.shape)
 
 
 
-# for i,file in enumerate(os.listdir(trainDat_path)):
-#     print('Now loading file number {num} out of {total}'.format(num = i, total = numSamples))
-#     filepath = os.path.join(trainDat_path,file)
-#     if i==0:
-#         headers, samples = loadSample(filepath)
-#         samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
-#     else:
-#         addSamp = loadSample(filepath)[1]
-#         samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
+for i,file in enumerate(os.listdir(trainDat_path)):
+    print('Now loading file number {num} out of {total}'.format(num = i, total = numSamples))
+    filepath = os.path.join(trainDat_path,file)
+    if i==0:
+        headers, samples = loadSample(filepath)
+        samples = samples.reshape(1, np.shape(samples)[0],np.shape(samples)[1])
+    else:
+        addSamp = loadSample(filepath)[1]
+        samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
 samples_NonStandard = samples
 # samples, scaler = normalise(samples.reshape(samples.shape[0]*samples.shape[1],-1),params) # retain the scaler parameters such that inverse scaling can be done
 # means = scaler.mean_ # Will have 1 value for each feature in the data
@@ -383,17 +388,8 @@ if params['standardisation'] != 0:
     y_val = y_val.reshape(y_valShape)
 
 # Create tensor datasets
-# ds = tf.data.Dataset.from_tensor_slices((X, Y)) 
-# ds = ds.shuffle(buffer_size = len(ds),reshuffle_each_iteration=False ) # Shuffle dataset to get different val/train datasets each run of the code
-# # BE CAREFUL: reshuffle_each_iteration must be false to avoid shuffling each epoch before taking out the validation data. If set to True we get data leakage from the validation set
-
-# # Split into training and validation datasets
-# train_ds = ds.take(train_length)
-# val_ds = ds.skip(train_length)
-
 train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
 val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
-
 
 
 
@@ -410,11 +406,26 @@ val_ds = val_ds.cache() # cache dataset for it to be used over iterations
 val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
+
 # Get shapes for later use
 train_in_shape = X_train.shape
 val_in_shape = X_val.shape
 train_out_shape = y_train.shape
 val_out_shape = y_val.shape
+
+# Currently there's a bug where we need to define the shape manually...
+# def set_shapes(image, label):
+#     image.set_shape((batchSize,train_in_shape[1],train_in_shape[2],train_in_shape[3]))
+#     label.set_shape((batchSize,train_out_shape[1],train_out_shape[2],train_out_shape[3]))
+#     return image, label
+
+
+# train_ds = train_ds.map(set_shapes)
+# val_ds = val_ds.map(set_shapes)
+
+
+
+
 
 #%% Plot data distribution to see if following gaussian approximately
 
@@ -636,6 +647,13 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                 x = tf.keras.layers.Conv2DTranspose(filters = 256, kernel_size = (int(params['layer5Kernel']),int(params['layer5Kernel'])),  padding='same',activation=temp_activation)(x)
                 if params['skipConnections'] == 1:
                   x = tf.keras.layers.Concatenate()([x, encoder4])
+            
+            
+            if params['type'] == 'dense':
+              y = tf.keras.layers.Flatten()(x)
+              y = tf.keras.layers.Dense(64, activation='relu')(y)
+              y = tf.keras.layers.Dense(outputShape[0]*outputShape[1])(y)
+              y = tf.keras.layers.Reshape(outputShape)(y)
 
             if params['ActivationUp'] == 0:
                 temp_activation = 'linear'
@@ -664,9 +682,16 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     if params['skipConnections'] == 1:
       x = tf.keras.layers.Concatenate()([x, encoder1])
 
+   # Custom activation function is linear between 0 and 1 and otherwise constant
+  def custom_activation(x):
+      return tf.math.minimum(K.relu(x), 1)
+
   x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',activation='linear')(x)
 
-  output = x
+  if params['type'] == 'dense': # For the dense model we jsut pull the output y
+     output = y
+  else:
+    output = x
 
   model = tf.keras.Model(inputs=input, outputs=output) # Create model
 
@@ -681,6 +706,27 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
     loss = tf.reduce_mean(loss)
     return loss
+  
+  def custom_loss5(y_true,y_pred):
+    SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),5))))
+    loss = tf.reduce_mean(loss)
+    return loss
+
+  def peak_loss(y_true,y_pred):
+    peakVal = tf.reduce_max(y_true, keepdims=True)
+    cond = tf.equal(y_true, peakVal)
+    # peakLoc = tf.where(cond)
+    # peakLoc_1d = tf.squeeze(peakLoc)
+    errorGrid = tf.math.subtract(y_true,y_pred)
+    zeroGrid = tf.math.subtract(y_true,y_true) # Grid of zeros so we only get loss in peak location
+    # peakPred = y_pred[peakLoc_1d.numpy()[0]]
+    # peakPred = tf.slice(y_pred, peakLoc, [1,1])
+    loss = tf.where(cond, errorGrid, zeroGrid)
+    loss = tf.reduce_mean(loss)
+
+    # loss = peakPred-peakVal
+    return loss
 
 
 #   Loss functions can be swept
@@ -690,6 +736,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     lossfunc = tf.keras.losses.MeanAbsoluteError()
   elif params['loss'] == 'Custom':
     lossfunc = custom_loss
+  elif params['loss'] == 'Peak':
+    lossfunc = peak_loss
+  elif params['loss'] == 'Custom5':
+    lossfunc = custom_loss5
     
 
 
@@ -717,7 +767,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 #####################################################################
 
 # Checkpoints to allow saving best model at various points
-checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn='TESTJOB', num = 1)
+# checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn='TESTJOB', num = 1)
+checkpoint_path = 'training_checkpoints_{jn}_{num}/model.weights.h5'.format(jn='TESTJOB', num = 1)
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 try:
@@ -760,6 +811,7 @@ modelCNNname = 'CNNModel1'
 # Model training
 #####################################################################
 
+# Known issue: sometimes throws error related to the shape of the labels...
 # Fit model to Failure index
 modelCNN_history = modelCNN.fit(train_ds,
                                 epochs=epochs,

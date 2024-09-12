@@ -31,10 +31,10 @@ import tf_keras as keras # Legacy keras version which is equal to the one on the
 # loaded_model.summary()
 
 #%% Settings for test script
-sweep_params = pd.read_csv(r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\sweep_definition_test.csv')
+sweep_params = pd.read_csv(r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\sweep_definition_FFNN.csv')
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[1]
-jobname = 'TESTJOB'
+jobname = 'FFNN'
 parallel = 1
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
 histOutName = 'trainHist_{jn}_{num}.json'.format(jn=jobname, num = parallel) # Training history file
@@ -429,3 +429,4 @@ with open(RMSEOutPath_val, 'w') as f: # Dump data to json file at specified path
 
 # Save the model
 modelFCNN.save(modelOutPath)
+# %%

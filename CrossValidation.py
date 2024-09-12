@@ -1,9 +1,37 @@
 #####################################################################
 # Description
 #####################################################################
-# This script is run on the computing cluster (HPC) and allows
-# training of a single model several times with the intention of 
-# performance validation
+'''
+This script is run on the computing cluster (HPC) and contains the
+model definition and training processes. It must be pointed to a 
+sweep definition csv wherein the model hyperparameters are tabulated
+
+A 10-fold cross validation of the model in the first row of the sweep definition is done
+The whole dataset is split into 10 subsets, and each fold uses one of them for validation
+
+
+Inputs:
+-j: jobname, note that jobs run using the routine require the appending of "_" to the jobname when calling
+-p: parallel, parameter to allow parallelisation on the HPC. Each p corresponds to a model defined in the sweep definition csv file
+
+sweep_definition_{jn}.csv: sweep definition file with same jobname as -j, placed in same directory as this script
+
+Ouputs:
+All saved to outputs folder where 
+{jn} = jobname
+{num} = index of model in sweep definition
+
+trainHist_{jn}_{num}.json: training history (curves)
+predictions_{jn}_{num}.json: Inversely scaled training specimen predictions - i.e. predictions in the real label scale
+predictions_val_{jn}_{num}.json: Same for validation
+groundTruth_{jn}_{num}.json: Ground truths in the true label scale
+groundTruth_val_{jn}_{num}.json: same for validation
+parameters_{jn}_{num}.json: model hyperparameters
+input_{jn}_{num}.json: Input features used in model
+RMSE_{jn}_{num}.json: Training RMSE across whole dataset
+RMSE_val_{jn}_{num}.json: Validation RMSE across whole dataset
+model_{jn}_{num}.keras: ".keras" file with trained model
+'''
 
 #####################################################################
 # Imports
@@ -30,14 +58,23 @@ import pandas as pd
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-
-
 import argparse
 
 #####################################################################
 # Settings
 #####################################################################
 
+yNames = ['FI'] # Names of ground truth features in input csv
+k = 10 # Number of folds in cross validation
+
+# For reproducible results set a seed
+seed = 0
+tf.random.set_seed(seed)
+
+
+#####################################################################
+# Formatting and settings done automatically
+#####################################################################
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
@@ -47,8 +84,8 @@ args = argParser.parse_args()
 sweepIdx = 1
 kFold = int(args.parallel)
 
-# Sweep definition of hyperparameters
-sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file
+# Sweep definition containing hyperparameters
+sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file, one for all repetitions hence [:-2]
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
@@ -69,7 +106,7 @@ elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 samples)
   trainDat_name = 'MatLabModel2024_200' 
   sampleShape = [60,20]
   if params['MC24_Features'] == 'Stiffness':
@@ -79,7 +116,7 @@ elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 samples)
   trainDat_name = 'MatLabModel2024_500' 
   sampleShape = [60,20]
   if params['MC24_Features'] == 'Stiffness':
@@ -119,9 +156,27 @@ elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
+elif params['Dataset'] == 'MC24_VarVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) variable Vf and random seed equivalent to the const Vf set
+  trainDat_name = 'MatLabModel2024_100SamplesVfVariable' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) constant Vf 
+  trainDat_name = 'MatLabModel2024_100SamplesVfConstant' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
 # Various settings
-yNames = ['FI'] # Names of ground truth features in input csv
-k = 10 # Number of folds in cross validation
 trainDat_path = os.path.join('datain',trainDat_name)
 numSamples = len(os.listdir(trainDat_path)) # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
@@ -129,14 +184,11 @@ batchSize = params['batchSize'] # Batch size for training
 trainValRatio = (k-1)/k # Training and validation data split ratio
 train_length = round(numSamples * trainValRatio) # Number of training samples 
 epochs = params['Epochs'] # Max epochs for training
-# epochs = 500 
-steps_per_epoch = train_length // batchSize
-validation_steps = math.ceil((numSamples-train_length) / batchSize)
+steps_per_epoch = train_length // batchSize # Number of batches in an epoch
+validation_steps = math.ceil((numSamples-train_length) / batchSize) # Validation batches (generally not needed)
 
-# For reproducible results set a seed
-seed = 0
-tf.random.set_seed(seed)
 
+# Paths for data output
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
 histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Training history file
 histOutPath = os.path.join('dataout',histOutName)
@@ -158,18 +210,17 @@ RMSEOutPath = 'RMSE_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel
 RMSEOutPath = os.path.join('dataout',RMSEOutPath)
 RMSEOutPath_val = 'RMSE_val_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # RMSE of model to quickly compare models when many are trained in a sweep
 RMSEOutPath_val = os.path.join('dataout',RMSEOutPath_val)
-
 #####################################################################
 # Data functions
 #####################################################################
-def formatCoords(values,coordIdx):
+def formatCoords(values,coordIdx): # Formatting of coordinate column which is present in LFC18 dataset
     coords = [[x for x in values[:,coordIdx][y].split(' ') if x] for y in range(len(values[:,coordIdx]))] # Split coordinates by delimiter (space)
     coords = [np.char.strip(x, '[') for x in coords] # Coordinate output from abaqus has leading "["
     coords = [[x for x in coords[y] if x] for y in range(len(values[:,coordIdx]))] # remove empty array elements
     coords = np.array([[float(x) for x in coords[y][0:2]] for y in range(len(values[:,coordIdx]))]) # Take 2d coordinates and convert to float
     return coords
 
-def loadSample(path = str):
+def loadSample(path = str): # Load a specimen (old and slow version, but more interpretable)
   '''
   Imports data in csv and formats into a tensor
   Data from Abaqus comes in a slightly bothersome format, this 
@@ -189,6 +240,55 @@ def loadSample(path = str):
     headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
   headers = np.array(headers)
   return headers, values
+
+
+
+# New sample loading routine which is faster but less interpretable
+def loadSampleNew(path):
+    '''
+    Load single specimen
+    '''
+    # Assuming loadSample uses pandas to read the CSV file
+    # Adjust the delimiter and header options as needed
+    sample = pd.read_csv(path)
+    headers = sample.columns.values.tolist()
+    values = np.array(sample)
+
+    if "coordinates" in headers: 
+      coordIdx = headers.index("coordinates")
+      if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+        coords = formatCoords(values,coordIdx)
+        values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+
+      headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+    headers = np.array(headers)
+    return headers, values
+
+
+def load_all_samples(trainDat_path, numSamples):
+    '''
+    Load all specimens in path
+    '''
+    files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
+    headers_list = []
+    samples_list = []
+
+    def process_file(filepath):
+        headers, values = loadSampleNew(filepath)
+        return headers, values
+
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_file, file): file for file in files}
+        for i, future in enumerate(as_completed(futures)):
+            headers, result = future.result()
+            if i == 0:
+                headers_list = headers  # Use headers from the first file
+            samples_list.append(result)
+            # print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
+
+    samples_array = np.array(samples_list)
+    return headers_list, samples_array
+
 
 randAug = tf.random.Generator.from_seed(seed) # Random number generator used for random augmentations
 def augmentImage(inputMatrices,gtMatrix):
@@ -235,10 +335,9 @@ def augmentImage(inputMatrices,gtMatrix):
     #   inputMatrices = tf.cast(inputMatrices, tf.float64)
     #   gtMatrix = tf.cast(gtMatrix, tf.float64)
 
-      
     return (inputMatrices,gtMatrix)
 
-
+# Can be used to show predicitions but generally unused
 def show_prediction(sample, predictions, names, ground_truth, grid):
   '''
   For a given dataset plots one image, its true mask, and predicted mask
@@ -282,51 +381,16 @@ def show_prediction(sample, predictions, names, ground_truth, grid):
     fig.colorbar(CS2)
     plt.title(names[idx])
 
+
+
 #####################################################################
 # Data import, normalisation, and reshaping
 #####################################################################
 
-# Import all data samples
-def loadSampleNew(path):
-    # Assuming loadSample uses pandas to read the CSV file
-    # Adjust the delimiter and header options as needed
-    sample = pd.read_csv(path)
-    headers = sample.columns.values.tolist()
-    values = np.array(sample)
-
-    if "coordinates" in headers: 
-      coordIdx = headers.index("coordinates")
-      if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
-        coords = formatCoords(values,coordIdx)
-        values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
-
-      headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
-    headers = np.array(headers)
-    return headers, values
-
-
-def load_all_samples(trainDat_path, numSamples):
-    files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
-    headers_list = []
-    samples_list = []
-
-    def process_file(filepath):
-        headers, values = loadSampleNew(filepath)
-        return headers, values
-
-    with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(process_file, file): file for file in files}
-        for i, future in enumerate(as_completed(futures)):
-            headers, result = future.result()
-            if i == 0:
-                headers_list = headers  # Use headers from the first file
-            samples_list.append(result)
-            # print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
-
-    samples_array = np.array(samples_list)
-    return headers_list, samples_array
-
+# New method
 headers, samples = load_all_samples(trainDat_path, numSamples)
+
+# Old method
 # for i,file in enumerate(os.listdir(trainDat_path)):
 #     filepath = os.path.join(trainDat_path,file)
 #     if i==0:
@@ -335,7 +399,9 @@ headers, samples = load_all_samples(trainDat_path, numSamples)
 #     else:
 #         addSamp = loadSample(filepath)[1]
 #         samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
-samples_NonStandard = samples
+
+# Non-scaled
+samples_NonScaled = samples
 # Reshape sample variable to have shape (samples, row, column, features)
 samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
 
@@ -352,7 +418,7 @@ featureIdx = []
 for name in xNames:
    featureIdx += [np.where(headers == name)[0][0]]
 
-# Find indeces of ground truth features 
+# Find indeces of labels
 gtIdx = []
 for name in yNames:
    gtIdx += [np.where(headers == name)[0][0]]
@@ -378,19 +444,23 @@ X_valShape = X_val.shape
 y_trainShape = y_train.shape
 y_valShape = y_val.shape
 
-# Standardisation/normalisation
-if params['standardisation'] == 'MinMax':
+# Standardisation/normalisation scaling
+if params['standardisation'] == 'MinMax': # Normalistaion
     Xscaler = preprocessing.MinMaxScaler() # Do a scaler for the in and outputs separately (to be able to inversely standardise predictions)
     Yscaler = preprocessing.MinMaxScaler() # Note: these shoud be fit to the training data and applied without fitting to the validation data to avoid data leakage
-elif params['standardisation'] == 'Standard':
+elif params['standardisation'] == 'Standard': # Standardisation
     Xscaler = preprocessing.StandardScaler() # Default is scale by mean and divide by std
     Yscaler = preprocessing.StandardScaler()
 elif params['standardisation'] == 0:
-   print('Warning: no standardisation of data applied')
+   print('Warning: no scaling of data applied')
+
 if params['standardisation'] != 0:
+    # Fit the scaler
     Xscaler.fit(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1)) # Scaler only takes input of shape (data,features)
+    # Transform training data
     X_train = Xscaler.transform(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1))
     X_train = X_train.reshape(X_trainShape) # reshape to 2D samples
+    # Transform validation data
     X_val = Xscaler.transform(X_val.reshape(X_val.shape[0]*X_val.shape[1]*X_val.shape[2],-1))
     X_val = X_val.reshape(X_valShape)
 
@@ -399,10 +469,10 @@ if params['standardisation'] != 0:
     y_train = y_train.reshape(y_trainShape) # reshape to 2D samples
     y_val = Yscaler.transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
     y_val = y_val.reshape(y_valShape)
+
 # Create tensor datasets
 train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
 val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
-
 
 # Training dataset preprocessing
 train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
@@ -435,7 +505,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   Args
   ----------
-  inputShape: the 55x20x3 input image shape
+  inputShape: the length x width x features, input image shape
   outputShape: the prediction image shape (currently unused)
   params: The hyperparameters for the given sweep index
 
@@ -458,9 +528,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   # activation function, and regularizer. After each convolutional layer there may be a batch-
   # normalization layer, a max pooling layer, and a dropout layer. The number of convolutional layers
   # is given in the sweep definition
-  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3)
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3) or (height, width, features) in general
   x = input
-
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
@@ -585,9 +654,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     decay_rate=params['lr_decay_rate'])
 
   # Custom loss function which attributes more importance to higher values of failure index
+  d_loss = 1 # Parameter to alter the importance of higher y_true values
   def custom_loss(y_true,y_pred):
     SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
+    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),d_loss))))
     loss = tf.reduce_mean(loss)
     return loss
   
@@ -624,11 +694,11 @@ checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn=args.jobna
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 try:
-  os.mkdir(checkpoint_dir) # Make checkpoint directory
+  os.mkdir(checkpoint_dir) # Make checkpoint directory if it doesn't already exist
 except:
-  pass
+  pass # Could be coded better but we don't want the sweep to fail due to issues on the HPC with mkdir
 
-# Save best weights to checkpoint
+# Save best weights to checkpoint based on only validation loss
 cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
                                                  save_best_only = True,
@@ -644,7 +714,8 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
     verbose=1, # Records message when earlystopping
     mode='auto',
     baseline=None, 
-    restore_best_weights=False # Do not restore best weights after early stopping, we do this manually to allow recording of the full training history
+    restore_best_weights=False # Do not restore best weights after early stopping, 
+                               # we do this manually to allow recording of the full training history and identify overfitting etc.
 )
 
 #####################################################################
@@ -683,7 +754,7 @@ predCNN_val = modelCNN.predict(X_val) # Prediction of only validation data
 predCNNShape = predCNN.shape
 predCNN_valShape = predCNN_val.shape
 
-# Inverse standardisation
+# Inverse scaling
 if params['standardisation'] == 0:
    predCNN_invStandard = predCNN
    predCNN_val_invStandard = predCNN_val
@@ -700,7 +771,7 @@ else:
    ground_truth_val_invStandard = Yscaler.inverse_transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
    ground_truth_val_invStandard = ground_truth_val_invStandard.reshape(y_valShape)
 
-# RMSE
+# RMSE calculation for both training and validation
 RMSE = tf.keras.metrics.RootMeanSquaredError()
 RMSE.update_state(ground_truth_invStandard,predCNN_invStandard)
 print('RMSE for training set = ' + str(RMSE.result().numpy()))

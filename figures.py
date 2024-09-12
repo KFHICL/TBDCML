@@ -1,20 +1,25 @@
 #####################################################################
 # Description
 #####################################################################
-# This script is used to generate some plots for use in reports and 
-# thesis.
+'''
+This script is used to manually generate figures from the results in 
+the study
 
+It is recommended to work in python interactive windows (using e.g 
+VS code)
 
+Inputs:
+None - Fix paths etc. manually in code
+
+Ouputs:
+Figures visualising model performance and behaviour
+'''
 
 # %%
 #####################################################################
 # Imports
 #####################################################################
-# import matplotlib.pyplot as plt
-# import numpy as np
-# from mpl_toolkits.mplot3d.proj3d import proj_transform
-# from mpl_toolkits.mplot3d.axes3d import Axes3D
-# from matplotlib.patches import FancyArrowPatch
+
 import sys
 
 import os
@@ -25,19 +30,23 @@ import datetime
 import shutil
 import json
 import scipy
-# import tensorflow as tf
+import tensorflow as tf
 import sklearn
 from sklearn import preprocessing
 import sklearn.model_selection
 from sklearn.preprocessing import StandardScaler
+import skimage as ski
 
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
+import cv2
 import plotly
 import warnings
+os.environ["TF_USE_LEGACY_KERAS"]="1" # Needed to import models saved before keras 3.0 release
+import tf_keras as keras # Legacy keras version which is equal to the one on the HPC
 
 import argparse
 
@@ -52,11 +61,18 @@ gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\M
 with open(gridPath) as json_file: # load into dict
     MC24_grid = np.array(json.load(json_file)) # grid for plotting
 
-MC24_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417' # The data format after extracting from Abaqus
+MC24_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1357_100SamplesVfVariable'
 MC24_numSamples = len(os.listdir(MC24_path)) # Number of data samples (i.e. TBDC specimens)
 MC24_sampleShape = [60,20]
 MC24_xNames = ['Ex','Ey','Gxy','Vf','c2'] # Names of input features in input csv
 MC24_yNames = ['FI'] # Names of ground truth features in input csv
+
+# MC24 dataset with constant Vf
+MC24_path_constVf = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1402_100SamplesVfConstant'
+
+# MC24 dataset not seen by any model
+MC24_path_Unseen = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240819_0954_100UnseenSamples"
+
 
 # LFC18 dataset
 gridPathOld = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
@@ -155,22 +171,128 @@ LFC18_X = LFC18_samples2D[:,:,:,LFC18_featureIdx]  # Input features
 
 LFC18_Y = LFC18_samples2D[:,:,:,LFC18_gtIdx] # Labels
 
+# Import MC24 with constant Vf
+for i,file in enumerate(os.listdir(MC24_path_constVf)):
+    filepath = os.path.join(MC24_path_constVf,file)
+    if i==0:
+        MC24_headers_constVf, MC24_samples_constVf = loadSample(filepath)
+        MC24_samples_constVf = MC24_samples_constVf.reshape(1, np.shape(MC24_samples_constVf)[0],np.shape(MC24_samples_constVf)[1])
+    else:
+        addSamp = loadSample(filepath)[1]
+        MC24_samples_constVf = np.concatenate((MC24_samples_constVf,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
+MC24_samples_NonStandard = MC24_samples
+# Reshape sample variable to have shape (samples, row, column, features)
+MC24_samples2D_constVf = MC24_samples_constVf.reshape(MC24_numSamples,MC24_sampleShape[0],MC24_sampleShape[1],MC24_samples.shape[-1])
+
+# Find indeces of input features 
+MC24_featureIdx_constVf = []
+for name in MC24_xNames:
+   MC24_featureIdx_constVf += [np.where(MC24_headers == name)[0][0]]
+
+# Find indeces of ground truth features 
+MC24_gtIdx_constVf = []
+for name in MC24_yNames:
+   MC24_gtIdx_constVf += [np.where(MC24_headers == name)[0][0]]
+   
+MC24_X_constVf = MC24_samples2D_constVf[:,:,:,MC24_featureIdx_constVf]  # Input features
+
+MC24_Y_constVf = MC24_samples2D_constVf[:,:,:,MC24_gtIdx_constVf] # Labels
+
+
+# Import MC24 Unseen Sanmples
+for i,file in enumerate(os.listdir(MC24_path_Unseen)):
+    filepath = os.path.join(MC24_path_Unseen,file)
+    if i==0:
+        MC24_headers_Unseen, MC24_samples_Unseen = loadSample(filepath)
+        MC24_samples_Unseen = MC24_samples_Unseen.reshape(1, np.shape(MC24_samples_Unseen)[0],np.shape(MC24_samples_Unseen)[1])
+    else:
+        addSamp = loadSample(filepath)[1]
+        MC24_samples_Unseen = np.concatenate((MC24_samples_Unseen,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
+# Reshape sample variable to have shape (samples, row, column, features)
+MC24_samples2D_Unseen = MC24_samples_Unseen.reshape(MC24_numSamples,MC24_sampleShape[0],MC24_sampleShape[1],MC24_samples.shape[-1])
+
+# Find indeces of input features 
+MC24_featureIdx_Unseen = []
+for name in MC24_xNames:
+   MC24_featureIdx_Unseen += [np.where(MC24_headers_Unseen == name)[0][0]]
+
+# Find indeces of ground truth features 
+MC24_gtIdx_Unseen = []
+for name in MC24_yNames:
+   MC24_gtIdx_Unseen += [np.where(MC24_headers_Unseen == name)[0][0]]
+   
+MC24_X_Unseen = MC24_samples2D_Unseen[:,:,:,MC24_featureIdx_Unseen]  # Input features
+
+MC24_Y_Unseen = MC24_samples2D_Unseen[:,:,:,MC24_gtIdx_Unseen] # Labels
+
+# %% Do predictions on unseen samples
+
+# Load model
+modelPaths = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408"
+repeats = 1
+numModels = 1
+
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=0.001,
+    decay_steps=10000,
+    decay_rate=1)
+
+for i in range(repeats): # For each repeat (1=indexed)
+    for j in range(numModels): # For each model (1-indexed)
+        print('Now loading repeat {rp} model number {num}'.format(rp = i+1, num = j+1))
+        # RMSEpath = modelPaths+'_{rp}\dataout\RMSE_val_MC24CrossValidation1408_{rp}_{m}.json'.format(rp = i+1, m = j+1)
+        modelPath = modelPaths+'_{rp}\dataout\model_MC24CrossValidation1408_{rp}_{m}.keras'.format(rp = i+1, m = j+1)
+        gtPath = modelPaths+'_{rp}\dataout\groundTruth_MC24CrossValidation1408_{rp}_{m}.json'.format(rp = i+1, m = j+1)
+        gtPath_val = modelPaths+'_{rp}\dataout\groundTruth_val_MC24CrossValidation1408_{rp}_{m}.json'.format(rp = i+1, m = j+1)
+        predPath = modelPaths+'_{rp}\dataout\predictions_MC24CrossValidation1408_{rp}_{m}.json'.format(rp = i+1, m = j+1)
+        predPath_val = modelPaths+'_{rp}\dataout\predictions_val_MC24CrossValidation1408_{rp}_{m}.json'.format(rp = i+1, m = j+1)
+        
+        loaded_model = keras.models.load_model(modelPath)
+
+        with open(gtPath) as json_file: # load into dict
+            groundTruth = np.array(json.load(json_file))
+        
+        with open(gtPath_val) as json_file: # load into dict
+            groundTruth_val = np.array(json.load(json_file))
+
+        with open(predPath) as json_file: # load into dict
+            prediction = np.array(json.load(json_file))
+        
+        with open(predPath_val) as json_file: # load into dict
+            prediction_val = np.array(json.load(json_file))
+            
+        
+
+
+
+loaded_model = keras.models.load_model(r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408_1\dataout\model_MC24CrossValidation1408_1_1.keras")
+
 # %% FUnction for creating contour plot
 
 def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5):
-    CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
+    if np.min(samples2D) == np.max(samples2D):
+         CS = ax.contourf(grid[0],grid[1],samples2D)
+         cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
+         cbar.ax.text(0.1, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
+            va='top', ha='left')
+         cbar.set_label(cbarlab, rotation=270,labelpad=7)
+    else:
+        CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
+        cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
+        cbar.ax.text(0.1, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
+            va='top', ha='left')
+        cbar.ax.text(0.1, 1.03, round(np.max(samples2D),2), transform=cbar.ax.transAxes, 
+            va='bottom', ha='left')
+        cbar.set_label(cbarlab, rotation=270,labelpad=7)
+    
     plt.ylabel(ylab)
     plt.xlabel(xlab)
     ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
     # cbar = fig.colorbar(CS,ticks=[np.min(samples2D), np.max(samples2D)], shrink = 0.8)
-    cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
-    cbar.ax.text(0.5, -0.03, round(np.min(samples2D),1), transform=cbar.ax.transAxes, 
-        va='top', ha='left')
-    cbar.ax.text(0.5, 1.0, round(np.max(samples2D),1), transform=cbar.ax.transAxes, 
-        va='bottom', ha='left')
+    
     # cbar.ax.locator_params(nbins=cBarBins)
-    cbar.set_label(cbarlab, rotation=270,labelpad=10)
+    
 
 
 
@@ -201,47 +323,198 @@ fig.set_figwidth(figWidth)
 sampleNum = 0
 
 # Ex
-ax = plt.subplot(2, 4, 1)
+ax = plt.subplot(2, 6, 1)
 tmp = np.where(LFC18_headers == 'Ex')[0][0]
 plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'LFC18', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
-ax = plt.subplot(2, 4, 4+1)
+ax = plt.subplot(2, 6, 6+1)
 tmp = np.where(MC24_headers == 'Ex')[0][0]
 plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ex', ylab = 'MC24', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
 
 # Ey
-ax = plt.subplot(2, 4, 2)
+ax = plt.subplot(2, 6, 2)
 tmp = np.where(LFC18_headers == 'Ey')[0][0]
 plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
-ax = plt.subplot(2, 4, 4+2)
+ax = plt.subplot(2, 6, 6+2)
 tmp = np.where(MC24_headers == 'Ey')[0][0]
 plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ey', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
 
 # Gxy
-ax = plt.subplot(2, 4, 3)
+ax = plt.subplot(2, 6, 3)
 tmp = np.where(LFC18_headers == 'Gxy')[0][0]
 plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
-ax = plt.subplot(2, 4, 4+3)
+ax = plt.subplot(2, 6, 6+3)
 tmp = np.where(MC24_headers == 'Gxy')[0][0]
 plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Gxy', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
 
+# Vf
+ax = plt.subplot(2, 6, 6+4)
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'Vf', ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+
+# Cos squared
+ax = plt.subplot(2, 6, 6+5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'c2', ylab = None, cbarlab = 'cos^2(q)', cBarBins = 3)
+
 
 # FI
-ax = plt.subplot(2, 4, 4)
+ax = plt.subplot(2, 6, 6)
 tmp = np.where(LFC18_headers == 'FI')[0][0]
 plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
 
-ax = plt.subplot(2, 4, 4+4)
+ax = plt.subplot(2, 6, 6+6)
 tmp = np.where(MC24_headers == 'FI')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'Failure Index', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'FI', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
 
 # Uncomment to save
-# plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
-# plt.show()
+plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.show()
+
+
+# %% Compare MC24 with and without constant Vf
+
+# PLOT Ex, Ey, Gxy, FI
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixel
+# matplotlib.rcParams["mathtext.fontset"] = 'stix'
+# matplotlib.rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+matplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+# matplotlib.rcParams["mathtext.fontset"] = 'stixsans'
+plt.rcParams["font.size"] = "6"
+latexWidth = 315
+figWidth = latexWidth*px
+Ratio = (138/50)# Specimen ratio
+figHeight = figWidth/1.618 # Golden ratio
+# figHeight = figWidth*Ratio*(2/4) # 2 subplots high, 4 subplots wide 
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+sampleNum = 2
+
+# Ex
+ax = plt.subplot(2, 6, 1)
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24 Variable Vf', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+1)
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ex', ylab = 'MC24 Constant Vf', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+
+# Ey
+ax = plt.subplot(2, 6, 2)
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+2)
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ey', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+
+# Gxy
+ax = plt.subplot(2, 6, 3)
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+3)
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Gxy', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+# Vf
+ax = plt.subplot(2, 6, 4)
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+4)
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp],  ax = ax, xlab = 'Vf', ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+
+# Cos squared
+ax = plt.subplot(2, 6, 5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'cos^2(q)', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp],  ax = ax, xlab = 'c2', ylab = None, cbarlab = 'cos^2(q)', cBarBins = 3)
+
+
+# FI
+ax = plt.subplot(2, 6, 6)
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+
+ax = plt.subplot(2, 6, 6+6)
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D_constVf[sampleNum,:,:,tmp],  ax = ax, xlab = 'FI', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+
+# Uncomment to save
+plt.savefig('DatasetSamples_ConstantVf.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.show()
+
+# %% Full fields for the MC24 dataset
+# PLOT Ex, Ey, Gxy, FI
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixel
+# matplotlib.rcParams["mathtext.fontset"] = 'stix'
+# matplotlib.rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+matplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+# matplotlib.rcParams["mathtext.fontset"] = 'stixsans'
+plt.rcParams["font.size"] = "6"
+latexWidth = 315
+figWidth = latexWidth*px
+Ratio = (138/50)# Specimen ratio
+figHeight = figWidth/1.618 # Golden ratio
+# figHeight = figWidth*Ratio*(2/4) # 2 subplots high, 4 subplots wide 
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+sampleNum = 0
+
+ax = plt.subplot(2, 3, 1)
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ex', ylab = 'MC24', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 3, 2)
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ey', ylab = 'MC24', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 3, 3)
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Gxy', ylab = 'MC24', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+
+ax = plt.subplot(2, 3, 4)
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Vf', ylab = 'MC24', cbarlab = 'Volume fraction', cBarBins = 3)
+
+ax = plt.subplot(2, 3, 5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'c2', ylab = 'MC24', cbarlab = 'cos^2(Orientation)', cBarBins = 3)
+
+ax = plt.subplot(2, 3, 6)
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'FI', ylab = 'MC24', cbarlab = 'Failure Index', cBarBins = 3)
+
+
+
+# %% 
 
 # %% Verification of Exx extraction of Eyy
 
@@ -317,14 +590,19 @@ MC24_midx = MC24_midx.set_names(['Sample', 'Datapoint'])
 # Flatten to 2D arrays where each column is a feature
 LFC18_samplesFlat = LFC18_samples2D.reshape(LFC18_numSamples*LFC18_sampleShape[0]*LFC18_sampleShape[1],len(LFC18_headers))
 MC24_samplesFlat = MC24_samples2D.reshape(MC24_numSamples*MC24_sampleShape[0]*MC24_sampleShape[1],len(MC24_headers))
+MC24_samplesFlat_constVf = MC24_samples2D_constVf.reshape(MC24_numSamples*MC24_sampleShape[0]*MC24_sampleShape[1],len(MC24_headers))
+
 
 # Put data in dataframes
 LFC18Df = pd.DataFrame(LFC18_samplesFlat, index = LFC18_midx, columns=LFC18_headers)
 LFC18Df['Dataset'] = 'LFC18'
 MC24Df = pd.DataFrame(MC24_samplesFlat, index = MC24_midx, columns=MC24_headers)
 MC24Df['Dataset'] = 'MC24'
+MC24Df_constVf = pd.DataFrame(MC24_samplesFlat_constVf, index = MC24_midx, columns=MC24_headers)
+MC24Df_constVf['Dataset'] = 'MC24_constVf'
 AllDf = pd.concat([LFC18Df, MC24Df])
 
+VfVariationDf = pd.concat([MC24Df, MC24Df_constVf])
 
 matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
@@ -355,6 +633,8 @@ def distPlot(df, features):
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
         # sns.histplot(df, x = features[i], kde = True, kde_kws = {"bw_adjust": 2}, hue = 'Dataset',element = 'step',linewidth=0,alpha=0.6)
         sns.kdeplot(df, x = features[i],bw_adjust=2, hue = 'Dataset',fill=True,common_norm = False)
+        if features[i] == 'Vf':
+             plt.ylim((0,3.3))
         plt.grid()
         plt.xlabel('')
         plt.ylabel('')
@@ -362,13 +642,15 @@ def distPlot(df, features):
         
         ax.get_legend().remove()
     h,l = ax.get_legend_handles_labels()
-    fig.legend(title='Dataset',labels=['MC24','LFC18'], 
+    fig.legend(title='Dataset',labels=np.flip(df['Dataset'].unique()), 
            loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.1))
 
 
 # All data points
-distPlot(AllDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
-plt.savefig('DataDistributions.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+# distPlot(AllDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
+# plt.savefig('DataDistributions.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+distPlot(VfVariationDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
+plt.savefig('DataDistributions_constVf.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 plt.show()
 
 # %% Correlations with FI
@@ -377,12 +659,16 @@ pearsonLFC18 = np.zeros((LFC18_numSamples,len(LFC18_featureIdx))) # Pearson corr
 pearsonLFC18_Pval = np.copy(pearsonLFC18)
 pearsonMC24 = np.zeros((MC24_numSamples,len(MC24_featureIdx))) # Pearson correlation with Failure index
 pearsonMC24_Pval = np.copy(pearsonMC24)
+pearsonMC24_constVf = np.zeros((MC24_numSamples,len(MC24_featureIdx))) # Pearson correlation with Failure index
+pearsonMC24_Pval_constVf = np.copy(pearsonMC24_constVf)
 
 # Spearman's correlation coefficient is the correlation of rank (i.e. if features monotonically increase together independent of proportionality)
 spearmanLFC18 = np.zeros((LFC18_numSamples,len(LFC18_featureIdx)))
 spearmanLFC18_Pval = np.copy(pearsonLFC18)
 spearmanMC24 = np.zeros((MC24_numSamples,len(MC24_featureIdx)))
 spearmanMC24_Pval = np.copy(pearsonMC24)
+spearmanMC24_constVf = np.zeros((MC24_numSamples,len(MC24_featureIdx)))
+spearmanMC24_Pval_constVf = np.copy(pearsonMC24_constVf)
 
 for i in range(LFC18_numSamples):
     for j,k in enumerate(LFC18_featureIdx): # Calculate correlation coefficients
@@ -394,6 +680,10 @@ for i in range(MC24_numSamples):
         pearsonMC24[i,j], pearsonMC24_Pval[i,j] = scipy.stats.pearsonr(MC24_samples[i,:,MC24_gtIdx[0]],MC24_samples[i,:,k])
         spearmanMC24[i,j], spearmanMC24_Pval[i,j] = scipy.stats.spearmanr(MC24_samples[i,:,MC24_gtIdx[0]],MC24_samples[i,:,k])
 
+for i in range(MC24_numSamples):
+    for j,k in enumerate(MC24_featureIdx): # Calculate correlation coefficients
+        pearsonMC24_constVf[i,j], pearsonMC24_Pval_constVf[i,j] = scipy.stats.pearsonr(MC24_samples_constVf[i,:,MC24_gtIdx[0]],MC24_samples_constVf[i,:,k])
+        spearmanMC24_constVf[i,j], spearmanMC24_Pval_constVf[i,j] = scipy.stats.spearmanr(MC24_samples_constVf[i,:,MC24_gtIdx[0]],MC24_samples_constVf[i,:,k])
 
 
 # Format in dataframes
@@ -401,15 +691,24 @@ pearsonLFC18Df = pd.DataFrame(pearsonLFC18, columns=LFC18_headers[LFC18_featureI
 pearsonLFC18Df['Dataset'] = 'LFC18'
 pearsonMC24Df = pd.DataFrame(pearsonMC24, columns=MC24_headers[MC24_featureIdx])
 pearsonMC24Df['Dataset'] = 'MC24'
+pearsonMC24Df_constVf = pd.DataFrame(pearsonMC24_constVf, columns=MC24_headers[MC24_featureIdx])
+pearsonMC24Df_constVf['Dataset'] = 'MC24_constVf'
 pearsonDf = pd.concat([pearsonLFC18Df, pearsonMC24Df])
 pearsonDf = pd.melt(pearsonDf, id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
+pearsonDf_constVf = pd.concat([pearsonMC24Df, pearsonMC24Df_constVf])
+pearsonDf_constVf = pd.melt(pearsonDf_constVf, id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
+
 
 spearmanLFC18Df = pd.DataFrame(spearmanLFC18, columns=LFC18_headers[LFC18_featureIdx])
 spearmanLFC18Df['Dataset'] = 'LFC18'
 spearmanMC24Df = pd.DataFrame(spearmanMC24, columns=MC24_headers[MC24_featureIdx])
 spearmanMC24Df['Dataset'] = 'MC24'
+spearmanMC24Df_constVf = pd.DataFrame(spearmanMC24_constVf, columns=MC24_headers[MC24_featureIdx])
+spearmanMC24Df_constVf['Dataset'] = 'MC24_constVf'
 spearmanDf = pd.concat([spearmanLFC18Df, spearmanMC24Df])
 spearmanDf = pd.melt(spearmanDf, id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
+spearmanDf_constVf  = pd.concat([spearmanMC24Df, spearmanMC24Df_constVf ])
+spearmanDf_constVf  = pd.melt(spearmanDf_constVf , id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
 
 
 # %% Visualisation with violin plots
@@ -520,7 +819,7 @@ def densPlot(df, features, groundTruth):
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
         # sns.histplot(df, x = features[i], kde = True, kde_kws = {"bw_adjust": 2}, hue = 'Dataset',element = 'step',linewidth=0,alpha=0.6)
         if not (features[i] == 'Vf' or features[i] == 'c2'):
-            sns.histplot(df, x = groundTruth[0], y = features[i], hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/100,np.max(df[features[i]])/100])
+            sns.histplot(df, x = groundTruth[0], y = features[i], hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/40,np.max(df[features[i]])/40])
             cmapOrange = ax.collections[1].get_cmap()
             lgdnhand =  ax.get_legend().legend_handles
             # for collection in ax.collections:
@@ -528,7 +827,7 @@ def densPlot(df, features, groundTruth):
             #     if isinstance(collection, matplotlib.collections.QuadMesh):
             #         facCol = ax.collections[1].get_cmap()
         else:
-            sns.histplot(df[df['Dataset']=='MC24'], x = groundTruth[0], y = features[i], hue = 'Dataset', binwidth = [np.max(df[df['Dataset']=='MC24'][groundTruth[0]])/100,np.max(df[df['Dataset']=='MC24'][features[i]])/100])
+            sns.histplot(df[df['Dataset']=='MC24'], x = groundTruth[0], y = features[i], hue = 'Dataset', binwidth = [np.max(df[df['Dataset']=='MC24'][groundTruth[0]])/30,np.max(df[df['Dataset']=='MC24'][features[i]])/30])
             ax.collections[0].set_cmap(cmapOrange)
             # for han in ax.get_legend_handles_labels():
             #     for hand in han:
@@ -540,7 +839,7 @@ def densPlot(df, features, groundTruth):
         plt.ylabel(features[i], labelpad=-0.5)
         plt.title(features[i])
 
-    fig.legend(title = 'Dataset',handles = lgdnhand, labels=['LFC18','MC24'],
+    fig.legend(title = 'Dataset',handles = lgdnhand, labels=np.flip(df['Dataset'].unique()),
            loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.15))
     ax6 = plt.subplot(dims[0],dims[1],6) # For plotting correlation coeffs
     bp = sns.barplot(data=corrDf,x = 'variable',y = 'value', hue = 'Dataset')
@@ -552,8 +851,141 @@ def densPlot(df, features, groundTruth):
 
 # All data points
 densPlot(AllDf, features = MC24_headers[MC24_featureIdx], groundTruth = MC24_headers[MC24_gtIdx])
-# scatPlot(AllDf, features = MC24_headers[-2:], groundTruth = MC24_headers[MC24_gtIdx])
+plt.savefig('CorrelationScatter.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.show()
 
+# scatPlot(AllDf, features = MC24_headers[-2:], groundTruth = MC24_headers[MC24_gtIdx])
+# %% Visualisation with density plot of constant Vf
+
+
+def densPlot(df, features, groundTruth):
+    pearsonMC24 = np.zeros(len(MC24_featureIdx)) # Pearson correlation with Failure index
+    pearsonMC24_Pval = np.copy(pearsonMC24)
+    pearsonMC24_conf = np.zeros((len(MC24_featureIdx),2))
+    pearsonMC24_constVf = np.zeros(len(MC24_featureIdx)) # Pearson correlation with Failure index
+    pearsonMC24_Pval_constVf = np.copy(pearsonMC24_constVf)
+    pearsonMC24_conf_constVf = np.zeros((len(MC24_featureIdx),2))
+    for f in range(len(features)):
+        res = scipy.stats.pearsonr(df[groundTruth[0]],df[features[f]])
+        pearsonMC24[f] = res.statistic
+        pearsonMC24_Pval[f] = res.pvalue
+        pearsonMC24_conf[f] = res.confidence_interval(confidence_level = 0.95)
+        pearsonMC24_conf[f,:] = np.abs(pearsonMC24_conf[f,:]-pearsonMC24[f])
+
+    corrDf2 = pd.DataFrame([pearsonMC24], columns=MC24_headers[MC24_featureIdx])
+    corrDf2['Dataset'] = 'MC24'
+    corrDf = corrDf2
+    corrDf = pd.melt(corrDf, id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
+
+    # print(pearsonMC24)
+    # print(pearsonLFC18)
+    # print(pearsonMC24_Pval)
+    # print(pearsonLFC18_Pval)
+    # print(pearsonLFC18_conf)
+
+
+
+    fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+    # fig = plt.figure(dpi = resolution_scaling*100) # 100 is default size
+    fig.set_figheight(figHeight)
+    fig.set_figwidth(figWidth)
+    numplts = len(features)
+    dims = [2,int(np.ceil(numplts/2))]
+    for i in range(numplts):
+        ax = plt.subplot(dims[0],dims[1],i+1)
+        plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+        # sns.histplot(df, x = features[i], kde = True, kde_kws = {"bw_adjust": 2}, hue = 'Dataset',element = 'step',linewidth=0,alpha=0.6)
+        sns.histplot(df, x = groundTruth[0], y = features[i], hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/30,np.max(df[features[i]])/30])
+        # cmapOrange = ax.collections[1].get_cmap()
+        # lgdnhand =  ax.get_legend().legend_handles
+        ax.get_legend().remove()
+        plt.grid()
+        plt.xlabel(groundTruth[0], labelpad=-0.5)
+        plt.ylabel(features[i], labelpad=-0.5)
+        plt.title(features[i])
+
+    # fig.legend(title = 'Dataset',handles = lgdnhand, labels=np.flip(df['Dataset'].unique()),
+    #        loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.15))
+    ax6 = plt.subplot(dims[0],dims[1],6) # For plotting correlation coeffs
+    bp = sns.barplot(data=corrDf,x = 'variable',y = 'value', hue = 'Dataset')
+    plt.grid()
+    plt.xlabel('')
+    plt.ylabel('Correlation', labelpad=-2)
+    plt.title('Pearson correlation with FI')
+    ax6.get_legend().remove()
+
+# Plot corr against each other
+pearsonMC24 = np.zeros(len(MC24_featureIdx)) # Pearson correlation with Failure index
+pearsonMC24_Pval = np.copy(pearsonMC24)
+pearsonMC24_conf = np.zeros((len(MC24_featureIdx),2))
+pearsonMC24_constVf = np.zeros(len(MC24_featureIdx)) # Pearson correlation with Failure index
+pearsonMC24_Pval_constVf = np.copy(pearsonMC24_constVf)
+pearsonMC24_conf_constVf = np.zeros((len(MC24_featureIdx),2))
+for f in range(len(MC24_headers[MC24_featureIdx])):
+    res = scipy.stats.pearsonr(VfVariationDf[VfVariationDf['Dataset']=='MC24'][MC24_headers[MC24_gtIdx][0]],VfVariationDf[VfVariationDf['Dataset']=='MC24'][MC24_headers[MC24_featureIdx][f]])
+    pearsonMC24[f] = res.statistic
+    pearsonMC24_Pval[f] = res.pvalue
+    pearsonMC24_conf[f] = res.confidence_interval(confidence_level = 0.95)
+    pearsonMC24_conf[f,:] = np.abs(pearsonMC24_conf[f,:]-pearsonMC24[f])
+
+for f in range(len(MC24_headers[MC24_featureIdx])):
+    res = scipy.stats.pearsonr(VfVariationDf[VfVariationDf['Dataset']=='MC24_constVf'][MC24_headers[MC24_gtIdx][0]],VfVariationDf[VfVariationDf['Dataset']=='MC24_constVf'][MC24_headers[MC24_featureIdx][f]])
+    pearsonMC24_constVf[f] = res.statistic
+    pearsonMC24_Pval_constVf[f] = res.pvalue
+    pearsonMC24_conf_constVf[f] = res.confidence_interval(confidence_level = 0.95)
+    pearsonMC24_conf_constVf[f,:] = np.abs(pearsonMC24_conf[f,:]-pearsonMC24[f])
+
+
+corrDf2 = pd.DataFrame([pearsonMC24], columns=MC24_headers[MC24_featureIdx])
+corrDf2['Dataset'] = 'MC24'
+corrDf3 = pd.DataFrame([pearsonMC24_constVf], columns=MC24_headers[MC24_featureIdx])
+corrDf3['Dataset'] = 'MC24_ConstVf'
+
+corrDf = pd.concat([corrDf2,corrDf3])
+corrDf = pd.melt(corrDf, id_vars=['Dataset'], value_vars=MC24_headers[MC24_featureIdx])
+plt.style.use("seaborn-v0_8-colorblind")
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "10"
+latexWidth = 315
+figWidth = latexWidth*px
+# Ratio = (138/50)# Specimen ratio
+figHeight = 1.1*figWidth/1.618 # Golden ratio
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+# fig = plt.figure(dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+ax = plt.subplot(1,1,1)
+bp = sns.barplot(data=corrDf,x = 'variable',y = 'value', hue = 'Dataset')
+plt.grid()
+plt.xlabel('')
+plt.ylabel('Correlation', labelpad=-2)
+# plt.title('Pearson correlation with FI')
+h,l = ax.get_legend_handles_labels()
+ax.get_legend().remove()
+# ax.set_yscale('log')
+fig.legend(title='Dataset',handles = h,labels=l, 
+           loc="lower center", ncol=2,bbox_to_anchor=(0.55, -0.3))
+
+
+plt.savefig('CorrelationScatter_ConstVf.pdf', bbox_inches='tight', pad_inches = 0)
+plt.show()
+
+
+# densPlot(AllDf, features = MC24_headers[MC24_featureIdx], groundTruth = MC24_headers[MC24_gtIdx])
+# plt.savefig('CorrelationScatter.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+densPlot(VfVariationDf[VfVariationDf['Dataset']=='MC24'], features = MC24_headers[MC24_featureIdx], groundTruth = MC24_headers[MC24_gtIdx])
+plt.savefig('CorrelationScatter_VariableVf.pdf', bbox_inches='tight', pad_inches = 0)
+densPlot(VfVariationDf[VfVariationDf['Dataset']=='MC24_constVf'], features = MC24_headers[MC24_featureIdx], groundTruth = MC24_headers[MC24_gtIdx])
+plt.savefig('CorrelationScatter_ConstVf.pdf', bbox_inches='tight', pad_inches = 0)
+plt.show()
 #%% PCA
 from sklearn.decomposition import PCA
 
@@ -711,8 +1143,8 @@ g = sns.lineplot(x = nums18,y = var_ratio_LFC18,marker='o', label='LFC18',marker
 h = sns.lineplot(x = nums24,y = var_ratio_MC24,marker='s', label='MC24',markeredgecolor=None)
 # g.set_markeredgecolor('black')
 # h.set_markeredgecolor('black')
-plt.xlabel('n_components')
-plt.ylabel('Explained variance ratio')
+plt.xlabel('Number of principal components')
+plt.ylabel('Cumulative explained variance ratio')
 ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 ax.legend(title = 'Dataset',ncol=2,loc="lower center",bbox_to_anchor=(0.5, -0.35))
 # lgdnhand =  ax.get_legend().legend_handles
@@ -1075,25 +1507,42 @@ plt.show()
 
 
 
-# # %% Loss functions
-# import tensorflow as tf
-# import numpy as np
-# import matplotlib.pyplot as plt
-# from matplotlib import cm
-# from matplotlib.ticker import LinearLocator
+# %% Loss functions
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
+import matplotlib
 
-# y_true_const = np.zeros((1000,1))
-# y_true = np.linspace(-1,1,1000).reshape(1000,1)
-# y_pred = np.linspace(-1,1,1000).reshape(1000,1)
-# Y,P = np.meshgrid(y_true,y_pred) # Y is true P is prediction
+plt.style.use("seaborn-v0_8-colorblind")
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "10"
+plt.rcParams['grid.linewidth'] = 0.2
+latexWidth = 315
+figWidth = latexWidth*px
+figHeight = figWidth/1.618 # Golden ratio
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
 
-# MSE_Mesh = np.square(Y-P)
-# MAE_Mesh = np.abs(Y-P)
-# MSLE_Mesh = np.square(np.log10(Y + 1) - np.log10(P + 1))
-# Custom_Mesh = np.square(Y-P)*(1+np.maximum(Y, 0))
 
-# plt.style.use("seaborn-v0_8-colorblind")
-# fig = plt.figure(figsize=(12,7.5), layout = "constrained", dpi = 600)
+
+y_true_const = np.zeros((1000,1))
+y_true = np.linspace(-1,1,1000).reshape(1000,1)
+y_pred = np.linspace(-1,1,1000).reshape(1000,1)
+Y,P = np.meshgrid(y_true,y_pred) # Y is true P is prediction
+
+MSE_Mesh = np.square(Y-P)
+MAE_Mesh = np.abs(Y-P)
+MSLE_Mesh = np.square(np.log10(Y + 1) - np.log10(P + 1))
+Custom_Mesh = np.square(Y-P)*(1+np.maximum(Y, 0))
+
+plt.style.use("seaborn-v0_8-colorblind")
+fig = plt.figure(figsize=(12,7.5), layout = "constrained", dpi = 600)
 
 # ax = plt.subplot(2,2,1)
 # CS = plt.contourf(Y,P, MAE_Mesh,levels = 100)
@@ -1128,41 +1577,54 @@ plt.show()
 # plt.ylabel('Predicted value')
 
 # # Also do 3D plots:
-# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-# CS1 = ax.plot_surface(Y, P, MAE_Mesh, cmap=cm.viridis,
-#                        linewidth=0, antialiased=False)
-# cbar = fig.colorbar(CS1)
-# cbar.ax.set_ylabel('Loss')
-# plt.title('Mean Absolute Error Loss')
-# plt.xlabel('True value')
-# plt.ylabel('Predicted value')
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+CS1 = ax.plot_surface(Y, P, MAE_Mesh, cmap=cm.viridis,
+                       linewidth=0, antialiased=False)
+cbar = fig.colorbar(CS1)
+cbar.ax.set_ylabel('Loss')
+plt.title('MAE Loss')
+plt.xlabel('True value')
+plt.ylabel('Prediction')
+# ax.w_zaxis.line.set_lw(0.)
+ax.set_zticklabels([])
+plt.savefig('MAE.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 
-# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-# CS2 = ax.plot_surface(Y, P, MSE_Mesh, cmap=cm.viridis,
-#                        linewidth=0, antialiased=False)
-# cbar = fig.colorbar(CS2)
-# cbar.ax.set_ylabel('Loss')
-# plt.title('Mean Squared Error Loss')
-# plt.xlabel('True value')
-# plt.ylabel('Predicted value')
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+CS2 = ax.plot_surface(Y, P, MSE_Mesh, cmap=cm.viridis,
+                       linewidth=0, antialiased=False)
+cbar = fig.colorbar(CS2)
+cbar.ax.set_ylabel('Loss')
+plt.title('MSE Loss')
+plt.xlabel('True value')
+plt.ylabel('Prediction')
+# ax.w_zaxis.line.set_lw(0.)
+ax.set_zticklabels([])
+plt.savefig('MSE.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 
-# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-# CS3 = ax.plot_surface(Y, P, MSLE_Mesh, cmap=cm.viridis,
-#                        linewidth=0, antialiased=False)
-# cbar = fig.colorbar(CS3)
-# cbar.ax.set_ylabel('Loss')
-# plt.title('Mean Squared Logarithmic Error Loss')
-# plt.xlabel('True value')
-# plt.ylabel('Predicted value')
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+CS3 = ax.plot_surface(Y, P, MSLE_Mesh, cmap=cm.viridis,
+                       linewidth=0, antialiased=False)
+cbar = fig.colorbar(CS3)
+cbar.ax.set_ylabel('Loss')
+plt.title('Mean Squared Logarithmic Error Loss')
+plt.xlabel('True value')
+plt.ylabel('Predicted value')
+# ax.w_zaxis.line.set_lw(0.)
+ax.set_zticklabels([])
 
-# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-# CS4 = ax.plot_surface(Y, P, Custom_Mesh, cmap=cm.viridis,
-#                        linewidth=0, antialiased=False)
-# cbar = fig.colorbar(CS4)
-# cbar.ax.set_ylabel('Loss')
-# plt.title('Custom loss function')
-# plt.xlabel('True value')
-# plt.ylabel('Predicted value')
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+CS4 = ax.plot_surface(Y, P, Custom_Mesh, cmap=cm.viridis,
+                       linewidth=0, antialiased=False)
+cbar = fig.colorbar(CS4)
+cbar.ax.set_ylabel('Loss')
+plt.title('Custom loss function')
+plt.xlabel('True value')
+plt.ylabel('Prediction')
+# ax.w_zaxis.line.set_lw(0.)
+ax.set_zticklabels([])
+plt.savefig('CustomLoss.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+
+plt.show()
 
 ####### Uncomment for 1D plots of loss functions
 # def MSEFun(y_true,y_pred):
@@ -1306,4 +1768,460 @@ for i in range(len(LFC18_headers)):
   fig.colorbar(CS)
 
 
-# plt.show()
+
+# %% SSIM
+
+
+def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5, scale = None):
+    if scale == None:
+        CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
+    else:
+        CS = ax.contourf(grid[0],grid[1],samples2D,levels=scale.levels) 
+    plt.ylabel(ylab, rotation=0, labelpad=20)
+    plt.xlabel(xlab)
+    ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
+    ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
+    # cbar = fig.colorbar(CS,ticks=[np.min(samples2D), np.max(samples2D)], shrink = 0.8)
+    print(CS.levels)
+    cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
+    # cbar.ax.text(0.1, -0.03, round(np.min(samples2D),1), transform=cbar.ax.transAxes, 
+    #     va='top', ha='left')
+    # cbar.ax.text(0.1, 1.03, round(np.max(samples2D),1), transform=cbar.ax.transAxes, 
+    #     va='bottom', ha='left')
+    cbar.ax.text(0.1, -0.03, round(np.min(CS.levels),1), transform=cbar.ax.transAxes, 
+        va='top', ha='left')
+    cbar.ax.text(0.1, 1.03, round(np.max(CS.levels),1), transform=cbar.ax.transAxes, 
+        va='bottom', ha='left')
+    # cbar.ax.locator_params(nbins=cBarBins)
+    cbar.set_label(cbarlab, rotation=270,labelpad=10)
+    return CS
+
+
+
+plt.style.use("seaborn-v0_8-colorblind")
+
+samples = [0,1,2]
+sampleShape = [55,20]
+groundTruths = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
+predictions = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
+
+# Results imported manually (1) (model depth = 1):
+predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_2.json"
+gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_2.json"
+
+with open(predPath) as json_file: # load into dict
+            prediction = np.array(json.load(json_file))
+
+with open(gtPathPath) as json_file: # load into dict
+            groundTruth = np.array(json.load(json_file))
+
+groundTruths[0] = groundTruth[0].reshape(sampleShape)
+predictions[0] = prediction[0].reshape(sampleShape)
+
+# model depth 2:
+predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_3.json"
+gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_3.json"
+with open(predPath) as json_file: # load into dict
+            prediction = np.array(json.load(json_file))
+
+with open(gtPathPath) as json_file: # load into dict
+            groundTruth = np.array(json.load(json_file))
+
+groundTruths[1] = groundTruth[2].reshape(sampleShape)
+predictions[1] = prediction[2].reshape(sampleShape)
+
+# Model depth 3:
+predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_1.json"
+gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_1.json"
+with open(predPath) as json_file: # load into dict
+            prediction = np.array(json.load(json_file))
+
+with open(gtPathPath) as json_file: # load into dict
+            groundTruth = np.array(json.load(json_file))
+
+groundTruths[2] = groundTruth[4].reshape(sampleShape)
+predictions[2] = prediction[4].reshape(sampleShape)
+
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "10"
+latexWidth = 315
+figWidth = latexWidth*px
+Ratio = (138/50)# Specimen ratio
+figHeight = Ratio*figWidth/1.618 # Golden ratio
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+
+harMean = 2/(1/8 + 1/50)
+pixelLength = 2.5
+
+charLengthPixels = harMean/pixelLength
+
+
+rows = len(samples)
+
+figLabels = ['(a)','(b)','(c)']
+for i in samples:
+    im1 = groundTruths[i].reshape(sampleShape)
+    im2 = predictions[i].reshape(sampleShape)
+
+    RMSEObj = tf.keras.metrics.RootMeanSquaredError()
+    RMSEObj.update_state(im1,im2)
+    RMSE = RMSEObj.result().numpy()
+
+    # PSNR = cv2.PSNR(im1, im2)
+
+    winKernel = int(np.floor(charLengthPixels)) # Takwe as material characteristic length
+    range = np.max(im1) - np.min(im1)
+    SSIM, simIm = ski.metrics.structural_similarity(im1, im2, win_size=winKernel, gradient=False, data_range=range, channel_axis=None, gaussian_weights=False, full=True)
+
+    # Ground truth
+    ax = plt.subplot(rows, 2, 1+i*2)
+    cScale = plot_contour(grid = LFC18_grid, samples2D = im1,  ax = ax, xlab = None, ylab = figLabels[i], cbarlab = 'Failure Index', cBarBins = 3)
+    if i == 0:
+         plt.title('Ground truth')
+    # Prediction
+    ax = plt.subplot(rows, 2, 2+i*2)
+    cScale2 = plot_contour(grid = LFC18_grid, samples2D = im2,  ax = ax, xlab  = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3, scale = cScale)
+    if i == 0:
+         plt.title('Prediction')
+    # ax.xaxis.set_label_coords(0.5,0.01)
+    # # Error
+    # ax = plt.subplot(rows, 4, 3+i*4)
+    # plot_contour(grid = LFC18_grid, samples2D = im2-im1,  ax = ax, xlab = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+
+
+    # ax = plt.subplot(rows, 3, 3+i*3)
+    # ax.set_axis_off()
+    ax.annotate(
+                xy=(-22,-62),
+                text='RMSE = ' + str(round(RMSE,2)) + '\n' + 'SSIM = ' + str(round(SSIM,2)),
+                ha='left',
+                size=8,
+                color = 'black',
+                weight = 'medium',
+                bbox = dict(facecolor='white', alpha=0.6, boxstyle = 'Round', edgecolor = 'white')
+            )
+    
+    # ax.annotate(
+    #             xy=(0,0.7),
+    #             text='SSIM = ' + str(round(SSIM,2)),
+    #             ha='left',
+    #             size=6
+    #         )
+
+    # ax.annotate(
+    #             xy=(0,0.6),
+    #             text='PSNR = ' + str(round(PSNR,2)),
+    #             ha='left',
+    #             size=6
+    #         )
+
+
+    # # Similarity
+    # ax = plt.subplot(rows, 4, 4+i*4)
+    # plot_contour(grid = LFC18_grid, samples2D = simIm,  ax = ax, xlab = None, ylab = None, cbarlab = 'Similarity', cBarBins = 3)
+
+
+
+plt.savefig('PerformanceMeasures.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.show()
+
+
+
+# %% FIgure sfor showing number of models to train to do gridsearch
+plt.style.use("seaborn-v0_8-colorblind")
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "10"
+latexWidth = 315
+figWidth = latexWidth*px
+# Ratio = (138/50)# Specimen ratio
+figHeight = 1.1*figWidth/1.618 # Golden ratio
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+
+HP_Nums = pd.DataFrame(data = pd.Series(data={'T/V':3,'Batch':6,'Kernel':7,'Optimizer':3,'Act.':7,'Loss':3,'Dropout':7,'LR':5,'LR decay':4,'Pooling':2,'B Norm.':2,'Depth':6,'D Aug.':2,'Skip':2,'Scaling':2,'Dec. act':2,'Epsilon':7}))
+# HP_Nums = pd.DataFrame(data = pd.Series(data={'Train-val split':3,'Batch Size':6,'Kernel size':7,'Optimizer':3,'Activation func.':7,'Loss':3,'Dropout':7,'Initial LR':5,'LR decay':4,'Max pooling':2,'Batch norm.':2,'Model depth':6,'Data aug':2,'Skip connections':2,'Scaling':2,'Decoder activation':2,'Epsilon':7}))
+HP_Nums = HP_Nums.rename(columns={0: "Number of values"})
+HP_Nums['Cumulative prod.'] = np.cumprod(HP_Nums)
+HP_Nums['Hyperparameter'] = HP_Nums.index
+
+
+
+ax = plt.subplot(1,1,1)
+bp = sns.barplot(data=HP_Nums,ax = ax, x = 'Hyperparameter',y = "Number of values" ,orient = 'v',color="#0173B2")
+
+ax.set_xticklabels( 
+    labels=ax.get_xticklabels(), rotation=90) 
+ax.tick_params(axis='x', labelsize=8)
+# plt.grid()
+
+ax2 = ax.twinx()
+lp = sns.lineplot(data=HP_Nums,ax = ax2, x = 'Hyperparameter',y = "Cumulative prod." ,color="#DE8F05")
+ax2.set_yscale('log')
+
+ax.set_ylabel('Individual values',color = 'black',bbox=dict(facecolor="#0173B2", edgecolor="#0173B2", pad=0.2, alpha=0.5, boxstyle = 'Round'))
+ax2.set_ylabel('Cumulative prod.',bbox=dict(facecolor="#DE8F05", edgecolor="#DE8F05", pad=0.2, alpha=0.5, boxstyle = 'Round'))
+# ax2.grid(None)
+ax.grid(True)
+
+    
+
+plt.savefig('GridSearch_NumModels.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.2)
+plt.show()
+
+
+# %% Test how long it takes to train a model locally (and how long to predict 100 specimenst0 = time.time()
+t0 = time.time()
+loaded_model.predict(MC24_X_Unseen)
+
+t1 = time.time()
+
+total = t1-t0
+print(total)
+
+
+
+
+
+# %% Qualitative results of both final models
+
+
+def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5, scale = None):
+    if type(scale) == 'NoneType':
+        CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
+    else:
+        CS = ax.contourf(grid[0],grid[1],samples2D,levels=scale) 
+    plt.ylabel(ylab, rotation=0, labelpad=20)
+    plt.xlabel(xlab)
+    ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
+    ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
+    # cbar = fig.colorbar(CS,ticks=[np.min(samples2D), np.max(samples2D)], shrink = 0.8)
+    print(CS.levels)
+    cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
+    # cbar.ax.text(0.1, -0.03, round(np.min(samples2D),1), transform=cbar.ax.transAxes, 
+    #     va='top', ha='left')
+    # cbar.ax.text(0.1, 1.03, round(np.max(samples2D),1), transform=cbar.ax.transAxes, 
+    #     va='bottom', ha='left')
+    cbar.ax.text(0.1, -0.03, round(np.min(CS.levels),1), transform=cbar.ax.transAxes, 
+        va='top', ha='left')
+    cbar.ax.text(0.1, 1.03, round(np.max(CS.levels),1), transform=cbar.ax.transAxes, 
+        va='bottom', ha='left')
+    # cbar.ax.locator_params(nbins=cBarBins)
+    cbar.set_label(cbarlab, rotation=270,labelpad=10)
+    return CS
+
+
+
+plt.style.use("seaborn-v0_8-colorblind")
+
+samples = [0,1]
+sampleShapeLFC18 = [55,20]
+sampleShapeMC24 = [60,20]
+
+
+LFC18_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\groundTruth_val_CrossValidation2808_1_1.json"
+LFC18_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\predictions_val_CrossValidation2808_1_1.json"
+
+MC24_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\groundTruth_val_MC24CrossValidation2808_1_1.json"
+MC24_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\predictions_val_MC24CrossValidation2808_1_1.json"
+
+
+with open(LFC18_PredPath) as json_file: # load into dict
+            predictionLFC18 = np.array(json.load(json_file))
+
+with open(LFC18_GTPath) as json_file: # load into dict
+            groundTruthLFC18 = np.array(json.load(json_file))
+
+with open(MC24_PredPath) as json_file: # load into dict
+            predictionMC24 = np.array(json.load(json_file))
+
+with open(MC24_GTPath) as json_file: # load into dict
+            groundTruthMC24 = np.array(json.load(json_file))
+
+
+
+# groundTruths[0] = groundTruth[0].reshape(sampleShape)
+# predictions[0] = prediction[0].reshape(sampleShape)
+
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "6"
+latexWidth = 315
+figWidth = latexWidth*px
+# Ratio = (138/50)# Specimen ratio
+Ratio = 1.41428571429 # A4 paper ratio
+# figHeight = Ratio*figWidth/1.618 # Golden ratio
+figHeight = Ratio*figWidth
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+
+harMean = 2/(1/8 + 1/50)
+pixelLength = 2.5
+
+charLengthPixels = harMean/pixelLength
+charLengthPixelsLFC18 = 5
+charLengthPixelsMC24 = 7
+
+rows = len(samples)*2
+cols = 4
+
+figLabels = ['LFC18','LFC18','MC24','MC24']
+for i in samples:
+    # LFC18
+    im1 = groundTruthLFC18[i+5].reshape(sampleShapeLFC18)
+    im2 = predictionLFC18[i+5].reshape(sampleShapeLFC18)
+    winKernel = int(np.floor(charLengthPixelsLFC18))
+    grid = LFC18_grid
+
+
+    RMSEObj = tf.keras.metrics.RootMeanSquaredError()
+    RMSEObj.update_state(im1,im2)
+    RMSE = RMSEObj.result().numpy()
+
+     # Takwe as material characteristic length
+    range = np.max(im1) - np.min(im1)
+    SSIM, simIm = ski.metrics.structural_similarity(im1, im2, win_size=winKernel, gradient=False, data_range=range, channel_axis=None, gaussian_weights=False, full=True)
+
+    # Ground truth
+    ax1 = plt.subplot(rows, cols, 1+i*cols)
+    cScale = plot_contour(grid = grid, samples2D = im1,  ax = ax1, xlab = None, ylab = figLabels[i], cbarlab = 'FI', cBarBins = 3)
+    if i == 0:
+         plt.title('Ground truth')
+    # ax1.set_ylabel('LFC18')
+    # Prediction
+    ax = plt.subplot(rows, cols, 2+i*cols)
+    cScale2 = plot_contour(grid = grid, samples2D = im2,  ax = ax, xlab  = None, ylab = None, cbarlab = 'FI', cBarBins = 3, scale = cScale.levels)
+    if i == 0:
+         plt.title('Prediction')
+    # Error
+    ax = plt.subplot(rows, cols, 3+i*cols)
+    cScale2 = plot_contour(grid = grid, samples2D = im2-im1,  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+    if i == 0:
+         plt.title('Error')
+    # SSIM over whole image
+    ax = plt.subplot(rows, cols, 4+i*cols)
+    cScale2 = plot_contour(grid = grid, samples2D = simIm,  ax = ax, xlab  = None, ylab = None, cbarlab = 'SSIM', cBarBins = 3, scale = np.linspace(0,1,15))
+    if i == 0:
+         plt.title('SSIM')
+
+
+
+
+    # ax.xaxis.set_label_coords(0.5,0.01)
+    # # Error
+    # ax = plt.subplot(rows, 4, 3+i*4)
+    # plot_contour(grid = LFC18_grid, samples2D = im2-im1,  ax = ax, xlab = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+
+
+    # ax = plt.subplot(rows, 3, 3+i*3)
+    # ax.set_axis_off()
+    ax1.annotate(
+                xy=(-1.8,0.25),
+                xycoords = 'axes fraction',
+                text='RMSE = ' + str(round(RMSE,3)) + '\n' + 'SSIM = ' + str(round(SSIM,3)),
+                ha='left',
+                size=6,
+                color = 'black',
+                weight = 'medium')
+    # bbox = dict(facecolor='white', alpha=0.6, boxstyle = 'Round', edgecolor = 'white')
+    
+    # MC24
+    im1 = groundTruthMC24[i+3].reshape(sampleShapeMC24)
+    im2 = predictionMC24[i+3].reshape(sampleShapeMC24)
+    winKernel = int(np.floor(charLengthPixelsMC24))
+    grid = MC24_grid
+
+    RMSEObj = tf.keras.metrics.RootMeanSquaredError()
+    RMSEObj.update_state(im1,im2)
+    RMSE = RMSEObj.result().numpy()
+
+     # Takwe as material characteristic length
+    range = np.max(im1) - np.min(im1)
+    SSIM, simIm = ski.metrics.structural_similarity(im1, im2, win_size=winKernel, gradient=False, data_range=range, channel_axis=None, gaussian_weights=False, full=True)
+
+    # Ground truth
+    ax1 = plt.subplot(rows, cols, 1+i*cols+8)
+    cScale = plot_contour(grid = grid, samples2D = im1,  ax = ax1, xlab = None, ylab = figLabels[i+2], cbarlab = 'FI', cBarBins = 3)
+    # ax1.set_ylabel('LFC18')
+    # Prediction
+    ax = plt.subplot(rows, cols, 2+i*cols+8)
+    cScale2 = plot_contour(grid = grid, samples2D = im2,  ax = ax, xlab  = None, ylab = None, cbarlab = 'FI', cBarBins = 3, scale = cScale.levels)
+
+    # Error
+    ax = plt.subplot(rows, cols, 3+i*cols+8)
+    cScale2 = plot_contour(grid = grid, samples2D = im2-im1,  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+
+    # SSIM over whole image
+    ax = plt.subplot(rows, cols, 4+i*cols+8)
+    cScale2 = plot_contour(grid = grid, samples2D = simIm,  ax = ax, xlab  = None, ylab = None, cbarlab = 'SSIM', cBarBins = 3, scale = np.linspace(0,1,15))
+
+
+
+
+
+    # ax.xaxis.set_label_coords(0.5,0.01)
+    # # Error
+    # ax = plt.subplot(rows, 4, 3+i*4)
+    # plot_contour(grid = LFC18_grid, samples2D = im2-im1,  ax = ax, xlab = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+
+
+    # ax = plt.subplot(rows, 3, 3+i*3)
+    # ax.set_axis_off()
+    ax1.annotate(
+                xy=(-1.8,0.25),
+                xycoords = 'axes fraction',
+                text='RMSE = ' + str(round(RMSE,3)) + '\n' + 'SSIM = ' + str(round(SSIM,3)),
+                ha='left',
+                size=6,
+                color = 'black',
+                weight = 'medium')
+    
+    # ax.annotate(
+    #             xy=(0,0.7),
+    #             text='SSIM = ' + str(round(SSIM,2)),
+    #             ha='left',
+    #             size=6
+    #         )
+
+    # ax.annotate(
+    #             xy=(0,0.6),
+    #             text='PSNR = ' + str(round(PSNR,2)),
+    #             ha='left',
+    #             size=6
+    #         )
+
+
+    # # Similarity
+    # ax = plt.subplot(rows, 4, 4+i*4)
+    # plot_contour(grid = LFC18_grid, samples2D = simIm,  ax = ax, xlab = None, ylab = None, cbarlab = 'Similarity', cBarBins = 3)
+
+
+
+plt.savefig('Final_model_examples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.show()

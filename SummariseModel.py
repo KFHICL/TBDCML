@@ -1,10 +1,28 @@
 #####################################################################
 # Description
 #####################################################################
-# This script provides and overview of the performance and training 
-# behaviour of a single model in a sweep. The RMSE is calculated for
-# all samples, and the results of the model are visualised in various 
-# plots.
+
+'''
+This script provides and overview of the performance and training 
+behaviour of a single model in a sweep. The RMSE is calculated for
+all samples, and the results of the model are visualised in various 
+plots.
+
+By default works with datasets LFC18 and MC24
+Labels are failure index (FI) fields
+
+Inputs:
+-j: jobname, note that jobs run using the routine require the appending of "_" to the jobname when calling
+-rp: model training repetition to summarise
+-i: model index to summarise
+
+Example of call:
+SummariseModel.py -j JOBNAME_ -rp 1 -i 1
+
+
+Ouputs:
+Figures visualising model performance and behaviour
+'''
 
 
 #####################################################################
@@ -40,27 +58,19 @@ import argparse
 # Settings
 #####################################################################
 
-# Set matplotlib style
-plt.style.use("seaborn-v0_8-colorblind")
+# Choose chich specimen to be plotted
+sampleNum = 1 
 
-sampleNum = 1 # Choose the sample (out of 100) to be plotted
+# Path for training data specimens
+trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' 
+numSamples = len(os.listdir(trainDat_path)) # Number of specimens
+sampleShape = [55,20] # Shape of specimens (LFC18 = [55,20], MC24 = [60,20])
 
-trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # Path for training data samples
-numSamples = len(os.listdir(trainDat_path)) # number of samples is number of files in datain
-sampleShape = [55,20]
-# sampleShape = [60,20]
+# Path to folders with result sweeps
+resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+
+# For MSc project, data generated before 14.06.2024 saved files with all specimens and data after saved files with training specimens
 warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the comparison will be between ALL DATA and validation data even if TRAINING DATA is displayed")
-# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
-
-
-
-# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
-# with open(gridPath) as json_file: # load into dict
-#     grid = np.array(json.load(json_file)) # grid for plotting
-
-# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
-# with open(gridPath) as json_file: # load into dict
-#     grid = np.array(json.load(json_file)) # grid for plotting
 
 #####################################################################
 # Input parsing and paths to training files
@@ -68,46 +78,45 @@ warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the com
 
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
-
-argParser.add_argument("-j", "--jobname", help="Name of job to summarise") # parameter to allow parallel running on the HPC
-argParser.add_argument("-rp", "--repeat", help="Number of repeats done of job") # parameter to allow parallel running on the HPC
-argParser.add_argument("-i", "--jobindex", help="Index of job to summarise") # parameter to allow parallel running on the HPC
-
+argParser.add_argument("-j", "--jobname", help="Name of job to summarise") # Name of job
+argParser.add_argument("-rp", "--repeat", help="Number of repeats done of job") # Which repeat to visualise
+argParser.add_argument("-i", "--jobindex", help="Index of job to summarise") # Index of model to be plotted
 args = argParser.parse_args()
-jobName = args.jobname # Jobname e.g. "sweep1403repeat"
-
-
+jobName = args.jobname
 
 if args.repeat is not None: # if there are several repeats (should usually be the case for training sweeps)
     repeat = args.repeat # repeat to summarise
 else:
     repeat = ''
 
-
-
+# For local testing TESTJOB, FFNN, and transfer learning test TLTEST have different path formats
 if jobName == 'TESTJOB':
     resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\dataoutTESTJOB'
     jobIndex = 1
+elif jobName == 'FFNN':
+    resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\dataoutTESTJOB'
+    jobIndex = 1
+elif jobName == 'TLTEST':
+    resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\dataoutTLTEST'
+    jobIndex = 1
 else:
     jobIndex = int(args.jobindex) # Index of the model to summarise (see sweep definition csv file for indices)
-
-    resultPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
-    resultPath = os.path.join(resultPath, '{jn}{rp}'.format(rp = repeat, jn=jobName),'dataout')
+    resultPath = os.path.join(resultPath, '{jn}{rp}'.format(rp = repeat, jn=jobName),'dataout') # Path to specific sweep folder
 
 
 histOutName = 'trainHist_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Training history
 histOutPath = os.path.join(resultPath,histOutName)
-predOutName = 'predictions_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions
+predOutName = 'predictions_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions on training specimens
 predOutPath = os.path.join(resultPath,predOutName)
-predOutName_val = 'predictions_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions
+predOutName_val = 'predictions_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Predictions on validation specimens
 predOutPath_val = os.path.join(resultPath,predOutName_val)
-gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths
+gtOutName = 'groundTruth_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths (training)
 gtOutPath = os.path.join(resultPath,gtOutName)
-gtOutName_val = 'groundTruth_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths
+gtOutName_val = 'groundTruth_val_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Ground truths (validation)
 gtOutPath_val = os.path.join(resultPath,gtOutName_val)
 paramOutName = 'parameters_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Hyperparameters of model
 paramOutPath = os.path.join(resultPath,paramOutName)
-inputOutName = 'input_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Inputs for model
+inputOutName = 'input_{jn}{rp}_{num}.json'.format(rp = repeat,jn=jobName, num = jobIndex) # Inputs features for model (all)
 inputOutPath = os.path.join(resultPath,inputOutName)
 
 
@@ -141,49 +150,53 @@ else:
 with open(inputOutPath) as json_file: # load into dict
     inputDat = np.array(json.load(json_file))
 
-# Load grid
+# Load grid which is used for evaluating failure locations and plotting fields
 if "Dataset" in parameters:
-    print(parameters['Dataset'])
-    if not parameters['Dataset']== 'LFC18':
+    if not parameters['Dataset']== 'LFC18': # Path to MC24 grid
         gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
-    else:
+    else: # Path to LFC18 grid
         gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
     with open(gridPath) as json_file: # load into dict
-        grid = np.array(json.load(json_file)) # grid for plotting
-
+        grid = np.array(json.load(json_file))
+else: # Default is LFC18 grid
+    gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
+    with open(gridPath) as json_file: # load into dict
+        grid = np.array(json.load(json_file)) 
 
 #####################################################################
 # Performance measures calculation
 #####################################################################
 
-# RMSE
+# RMSE for training data
 RMSE = tf.keras.metrics.RootMeanSquaredError()
 RMSE.update_state(groundTruth,prediction)
 print('RMSE for training set = ' + str(RMSE.result().numpy()))
-if groundTruth_val is not None:
+
+if groundTruth_val is not None: # RMSE for validation data
     RMSE_val = tf.keras.metrics.RootMeanSquaredError()
     RMSE_val.update_state(groundTruth_val,prediction_val)
     print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
 
-# Maximum failure index location, Shape: [samples, length, width]
-maxGT = np.zeros(groundTruth.shape[0])
-maxGTIdx = np.zeros((groundTruth.shape[0],2))
-maxGTCoords = np.zeros((groundTruth.shape[0],2))
-
+# Empty arrays for maximum FI locations and values
+# groundTruth shape: [specimens, length, width]
+maxGT = np.zeros(groundTruth.shape[0]) # Maximum true FI value in each specimen
+maxGTIdx = np.zeros((groundTruth.shape[0],2)) # Index of maximum true FI value in each specimen
+maxGTCoords = np.zeros((groundTruth.shape[0],2)) # Coordinates of maximum true FI value in each specimen
 if groundTruth_val is not None:
     maxGT_val = np.zeros(groundTruth_val.shape[0])
     maxGTIdx_val = np.zeros((groundTruth_val.shape[0],2))
     maxGTCoords_val = np.zeros((groundTruth_val.shape[0],2))
 
-maxPred = np.zeros(prediction.shape[0])
-maxPredIdx = np.zeros((prediction.shape[0],2))
-maxPredCoords = np.zeros((prediction.shape[0],2))
-
+maxPred = np.zeros(prediction.shape[0]) # Maximum predicted FI value in each specimen
+maxPredIdx = np.zeros((prediction.shape[0],2)) # Incex of maximum predicted FI value in each specimen
+maxPredCoords = np.zeros((prediction.shape[0],2)) # Coordinates of maximum predicted FI value in each specimen
 if groundTruth_val is not None:
     maxPred_val = np.zeros(prediction_val.shape[0])
     maxPredIdx_val = np.zeros((prediction_val.shape[0],2))
     maxPredCoords_val = np.zeros((prediction_val.shape[0],2))
 
+
+# Finding maximum FI locations and values
 # Ground truth training samples
 for i in range(groundTruth.shape[0]):
     maxGT[i] = np.max(groundTruth[i,:,:]) # Maximum true value
@@ -210,23 +223,20 @@ if groundTruth_val is not None:
         maxPredIdx_val[i] = np.unravel_index(prediction_val[i].argmax(), prediction_val[i].shape)[:2] # 2D index of maximum value in ground truth
         maxPredCoords_val[i] = grid[0,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])],grid[1,int(maxPredIdx_val[i,0]),int(maxPredIdx_val[i,1])] # Coordinate of maximum FI value
 
-# Format Mx FI into dataframes
+# Format Max FI into dataframes
 maxPredDf = pd.DataFrame(maxPred.reshape(-1))
 maxPredDf.columns = ['Failure Index']
 maxPredDf['Specimens']='Training data'
 maxPredDf['Prediction or GT']='Prediction'
-
 if groundTruth_val is not None:
     maxPredDf_val = pd.DataFrame(maxPred_val.reshape(-1))
     maxPredDf_val.columns = ['Failure Index']
     maxPredDf_val['Specimens']='Validation data'
     maxPredDf_val['Prediction or GT']='Prediction'
-
 maxGTDf = pd.DataFrame(maxGT.reshape(-1))
 maxGTDf.columns = ['Failure Index']
 maxGTDf['Specimens']='Training data'
 maxGTDf['Prediction or GT']='Ground Truth'
-
 if groundTruth_val is not None:
     maxGTDf_val = pd.DataFrame(maxGT_val.reshape(-1))
     maxGTDf_val.columns = ['Failure Index']
@@ -235,11 +245,9 @@ if groundTruth_val is not None:
 
 if groundTruth_val is not None:
     MaxFIDf = pd.concat([maxPredDf, maxPredDf_val, maxGTDf, maxGTDf_val])
-# print(maxPredDf_val.head)
 
-
-# Calculate maximum error in distance and print these
-x_error = maxGTCoords[:,0] - maxPredCoords[:,0]
+# Calculate maximum error in distance (in pixels i.e. integration point spacing)
+x_error = maxGTCoords[:,0] - maxPredCoords[:,0] 
 y_error = maxGTCoords[:,1] - maxPredCoords[:,1]
 errorDist = np.sqrt(np.square(x_error) + np.square(y_error))
 if groundTruth_val is not None:
@@ -253,8 +261,7 @@ if groundTruth_val is not None:
     ErrDistDf_val = pd.Series(errorDist_val.reshape(-1), name='Validation data')
     ErrorDistDf = pd.concat([ErrDistDf, ErrDistDf_val], axis=1)
 
-
-# Calculate errors in value of maximum point
+# Calculate errors in maximum FI prediction
 maxPointError = maxPred[:] - maxGT[:]
 if groundTruth_val is not None:
     maxPointError_val = maxPred_val[:] - maxGT_val[:]
@@ -264,9 +271,8 @@ if groundTruth_val is not None:
     maxErrDf_val = pd.Series(maxPointError_val.reshape(-1), name='Validation data')
     maxPointErrorDf = pd.concat([maxErrDf, maxErrDf_val], axis=1)
 
-
 #####################################################################
-# Model summary figure
+# First summary plot
 #####################################################################
 
 # Intantiate figure
@@ -275,8 +281,9 @@ fig = plt.figure(figsize=(1200*px, 800*px), layout="constrained")
 totalCols = 6 # figure columns
 plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme
 
-# Table of hyperparameters for the given model
-ax = plt.subplot(1,totalCols,(1,2)) # Axis definition and limits
+
+## Table of hyperparameters for the given model ##
+ax = plt.subplot(1,totalCols,(1,2)) 
 ncols = 2
 nrows = len(parameters)
 ax.set_xlim(0, ncols)
@@ -309,9 +316,9 @@ ax.annotate(
     ha='left'
 )
 
-# Prediction vs ground truth scatter plot
+## Prediction vs ground truth scatter plot (training data) ##
 ax = plt.subplot(2,totalCols,(3,4))
-ax.scatter(x = groundTruth, y = prediction, marker = ".")
+ax.scatter(x = groundTruth, y = prediction, marker = ".") 
 ax.plot([0,4],[0,4],color = '#04D8B2')
 plt.xlim([np.min(groundTruth),np.max(groundTruth)])
 plt.ylim([np.min(prediction),np.max(prediction)])
@@ -320,10 +327,11 @@ plt.xlabel('ground truth')
 plt.ylabel('prediction')
 plt.grid()
 
-# Training history plot
+## Training curves ## 
 ax = plt.subplot(2,totalCols,(5,6))
 ax.plot(history['loss'])
 ax.plot(history['val_loss'])
+# ax.set_ylim([0.1,0.5])
 ax.set_yscale('log')
 plt.title('Model training history')
 plt.grid()
@@ -331,13 +339,12 @@ plt.ylabel('Loss')
 plt.xlabel('Training Epoch')
 plt.legend(['Training Data', 'Validation Data'], loc='upper right')
 
-
-# Prediction vs ground truth error distribution
+## Prediction vs ground truth error distribution ## 
+# Calculation of the error
 absErr = np.array(prediction) - np.array(groundTruth)
 absErrDfFlat = pd.DataFrame(absErr.reshape(-1))
 absErrDfFlat.columns = ['Error']
 absErrDfFlat['Specimens']='Training data'
-
 if groundTruth_val is not None:
     absErr_val = np.array(prediction_val) - np.array(groundTruth_val)
     absErrDfFlat_val = pd.DataFrame(absErr_val.reshape(-1))
@@ -345,6 +352,7 @@ if groundTruth_val is not None:
     absErrDfFlat_val['Specimens']='Validation data'
     absErrorDf = pd.concat([absErrDfFlat, absErrDfFlat_val])
 
+# Plotting of the error
 ax = plt.subplot(2,totalCols,(9,10))
 sns.histplot(absErrDfFlat)
 plt.grid()
@@ -352,8 +360,8 @@ plt.xlabel('Absolute Error')
 plt.title('Distribution of absolute errors')
 plt.legend([],[], frameon=False)
 
-# Plot prediction vs actual field
 
+## Plot prediction vs ground truth example ## 
 ax = plt.subplot(2,totalCols,11) # Ground truth
 CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:].reshape(groundTruth.shape[1],-1))
 plt.title('ground truth')
@@ -363,45 +371,22 @@ CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:].reshape(prediction.s
 fig.colorbar(CS2)
 plt.title('prediction')
 
+# Force figure layout
 fig.get_constrained_layout
 
 
 
-# # Save grid for use in other scripts
+
+# # Save grid for use in other scripts - already done
 # gridout = [grid[0].tolist(),grid[1].tolist()]
 # gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
 # with open(gridPath, 'w') as f: # Dump data to json file at specified path
 #     json.dump(gridout, f, indent=2)
 
 
-
-
 #####################################################################
-# Misc Plots
+# Second summary plot
 #####################################################################
-
-# Ground truth vs prediction figure
-px = 1/plt.rcParams['figure.dpi']  # pixel in inches
-fig = plt.figure(figsize=(300*px, 300*px), layout="constrained")
-plt.style.use("seaborn-v0_8-colorblind") # For consitency use this colour scheme and viridis
-
-ax = plt.subplot(1,2,1) # Ground truth
-CS = ax.contourf(grid[0],grid[1],groundTruth[sampleNum,:,:].reshape(groundTruth.shape[1],-1))
-plt.title('Ground truth')
-ax.set_xticks([])
-ax.set_yticks([])
-
-ax = plt.subplot(1,2,2) # Prediction
-CS2 = ax.contourf(grid[0],grid[1],prediction[sampleNum,:,:].reshape(prediction.shape[1],-1),  levels = CS.levels)
-
-cbar = fig.colorbar(CS2)
-cbar.ax.set_ylabel('Failure Index')
-
-ax.set_xticks([])
-ax.set_yticks([])
-plt.title('Prediction')
-
-fig.get_constrained_layout
 
 # Max FI point error distribution figure
 if groundTruth_val is not None:
@@ -417,13 +402,12 @@ if groundTruth_val is not None:
     plt.xlabel('FI error')
     plt.title('Error distribution of peak failure index prediction')
 
-
     # Plot distribution of error distance to mx FI
     ax = plt.subplot(2,totalCols,2)
     bins = np.arange(-5, 150, 10)
     sns.histplot(ErrorDistDf, ax=ax, bins = bins)
     plt.grid()
-    plt.xlabel('Distance error')
+    plt.xlabel('Distance error [pixels]')
     plt.title('Distribution of distance between predicted FI peak and actual FI peak')
 
     # Plot prediction error distributions for all points
@@ -434,6 +418,8 @@ if groundTruth_val is not None:
     plt.grid()
     plt.xlabel('FI error')
     plt.title('Error distribution of all failure index predictions')
+
+    # Can print various things
     print('median of training error ' + str(np.percentile(absErr,50)))
     print('median of val error ' + str(np.percentile(absErr_val,50)))
     print('95 percent of all training error fall between ' + str(np.percentile(absErr,2.5)) + ' and ' + str(np.percentile(absErr,97.5)))
@@ -451,14 +437,16 @@ if groundTruth_val is not None:
     # Plot of Max FI prediction vs ground truth
     ax = plt.subplot(2,totalCols,4)
     bins = np.arange(-5, 150, 10)
-    sns.barplot(MaxFIDf, x="Prediction or GT", y="Failure Index", hue="Specimens", capsize=.3, gap=.1, linewidth=1, edgecolor="0", err_kws={"color": "0", "linewidth": 1}, width=.5)
+
+    sns.swarmplot(data=MaxFIDf, x="Prediction or GT", y="Failure Index", hue="Specimens",dodge=True,)
+    # sns.barplot(MaxFIDf, x="Prediction or GT", y="Failure Index", hue="Specimens", capsize=.3, gap=.1, linewidth=1, edgecolor="0", err_kws={"color": "0", "linewidth": 1}, width=.5)
     plt.grid()
-    plt.xlabel('Failure Index')
+    # plt.xlabel('Failure Index')
     plt.title('Maximum failure index of all specimens')
 
 
 # Input data figure
-# Reminder: the header index is the following
+# Reminder: the header index (in LFC18) is the following
 # [   0        1         2       3     4     5     6     7     8      9      10   11    12    13  ]
 # ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
 # Eyy = inputDat[sampleNum,:,:,12]
