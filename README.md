@@ -59,9 +59,3 @@ sweeps used in this thesis.
 11. GenerateResultSummary.py: Allows extraction of RMSEs from all model sweeps in
 the results folder and compilation of these in a single spreadsheet.
 
-
-### Folders
-TEMPLATES_AND_EXAMPLES contains examples of HPC submission folders and the format of results folders
-
-
-
