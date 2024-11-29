@@ -36,7 +36,7 @@ loaded_model = keras.models.load_model(modelPath)
 loaded_model.summary()
 
 #%% Settings for test script
-sweep_params = pd.read_csv(r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Code\TBDCML_Clone\TBDCML\sweep_definition_test.csv')
+sweep_params = pd.read_csv(os.path.join(os.getcwd(),'sweep_definition_test.csv'))
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[1]
 jobname = 'TESTJOB'
@@ -64,16 +64,19 @@ RMSEOutPath_val = 'RMSE_val_{jn}_{num}.json'.format(jn=jobname, num = parallel) 
 RMSEOutPath_val = os.path.join('dataoutTESTJOB',RMSEOutPath_val)
 
 #%% Import data
+trainDat_path = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\datain'
+
+
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   trainDat_name = 'Gaudron2018' 
   sampleShape = [55,20]
   xNames = ['E11','E22','E12'] # Names of input features in input csv
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # Path for training data samples
+  trainDat_path = os.path.join(trainDat_path,'Gaudron2018') # Path for training data samples
   
 elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   trainDat_name = 'MatLabModel2024' 
   sampleShape = [60,20]
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417_100Samples'
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -81,9 +84,10 @@ elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 samples)
   trainDat_name = 'MatLabModel2024_200' 
   sampleShape = [60,20]
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_200')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -91,9 +95,10 @@ elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 samples)
   trainDat_name = 'MatLabModel2024_500' 
   sampleShape = [60,20]
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_500')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -104,7 +109,7 @@ elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
 elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
   trainDat_name = 'MatLabModel2024_1000' 
   sampleShape = [60,20]
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240725_1233_1kSamples'
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_1000')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -112,10 +117,10 @@ elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samp
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
-  trainDat_name = 'MatLabModel2024_10000' 
+elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
+  trainDat_name = 'MatLabModel2024_1000' 
   sampleShape = [60,20]
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240725_1239_10kSamples'
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_1000')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
@@ -123,16 +128,40 @@ elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 s
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
-elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000 samples)
-  trainDat_name = 'MatLabModel2024_100000' 
+elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224 resolution)
+  trainDat_name = 'MatLabModel2024_224_4kSamples' 
   sampleShape = [60,20]
-  trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240725_1439_100kSamples'
+  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_224_4kSamples')
   if params['MC24_Features'] == 'Stiffness':
     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
   elif params['MC24_Features'] == 'Vf_c2':
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+
+
+# elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
+#   trainDat_name = 'MatLabModel2024_10000' 
+#   sampleShape = [60,20]
+#   trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240725_1239_10kSamples'
+#   if params['MC24_Features'] == 'Stiffness':
+#     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+#   elif params['MC24_Features'] == 'Vf_c2':
+#     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+#   elif params['MC24_Features'] == 'All':
+#      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+# elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000 samples)
+#   trainDat_name = 'MatLabModel2024_100000' 
+#   sampleShape = [60,20]
+#   trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240725_1439_100kSamples'
+#   if params['MC24_Features'] == 'Stiffness':
+#     xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+#   elif params['MC24_Features'] == 'Vf_c2':
+#     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+#   elif params['MC24_Features'] == 'All':
+#      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
 
 
