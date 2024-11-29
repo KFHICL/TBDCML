@@ -73,7 +73,7 @@ if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   sampleShape = [55,20]
   xNames = ['E11','E22','E12'] # Names of input features in input csv
   trainDat_path = os.path.join(trainDat_path,'Gaudron2018') # Path for training data samples
-  
+  samplesPerFile = 1
 elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   trainDat_name = 'MatLabModel2024' 
   sampleShape = [60,20]
@@ -84,13 +84,8 @@ elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-<<<<<<< HEAD
-
-elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 samples)
-=======
   samplesPerFile = 1
-elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
->>>>>>> e068a762ba2bae4c6adfdb8a1ec3712e83ed26fb
+elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 samples)
   trainDat_name = 'MatLabModel2024_200' 
   sampleShape = [60,20]
   trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_200')
@@ -100,13 +95,8 @@ elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-<<<<<<< HEAD
-
-elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 samples)
-=======
   samplesPerFile = 1
-elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
->>>>>>> e068a762ba2bae4c6adfdb8a1ec3712e83ed26fb
+elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 samples)
   trainDat_name = 'MatLabModel2024_500' 
   sampleShape = [60,20]
   trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_500')
@@ -127,32 +117,10 @@ elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samp
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-<<<<<<< HEAD
-
-elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
-  trainDat_name = 'MatLabModel2024_1000' 
-=======
   samplesPerFile = 1
-elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
-  trainDat_name = 'MatLabModel2024_10000' 
->>>>>>> e068a762ba2bae4c6adfdb8a1ec3712e83ed26fb
-  sampleShape = [60,20]
-  trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_1000')
-  if params['MC24_Features'] == 'Stiffness':
-    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
-  elif params['MC24_Features'] == 'Vf_c2':
-    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
-  elif params['MC24_Features'] == 'All':
-     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-<<<<<<< HEAD
 
 elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224 resolution)
   trainDat_name = 'MatLabModel2024_224_4kSamples' 
-=======
-  samplesPerFile = 1
-elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000 samples)
-  trainDat_name = 'MatLabModel2024_100000' 
->>>>>>> e068a762ba2bae4c6adfdb8a1ec3712e83ed26fb
   sampleShape = [60,20]
   trainDat_path = os.path.join(trainDat_path,'MatLabModel2024_224_4kSamples')
   if params['MC24_Features'] == 'Stiffness':
@@ -161,7 +129,7 @@ elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-  samplesPerFile = 1
+  samplesPerFile = 40
 
 
 # elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
