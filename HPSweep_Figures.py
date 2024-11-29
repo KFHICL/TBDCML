@@ -4,7 +4,7 @@
 # This script is used to generate some plots for use in reports and 
 # thesis.
 
-
+# %%
 #####################################################################
 # Imports
 ####################################################################
@@ -204,13 +204,13 @@ testUnseen = False # We can load a model and test it on an unseen dataset.
 # compareParam = 'Index' # parameter to plot comparison of
 # dataset = 'MC24'
 
-# jobName = 'MC24ConstVf2908_' # MC24 constant Vf sweep
-# compareParam = 'Dataset' # parameter to plot comparison of
-# dataset = 'MC24'
-
-jobName = 'MC24DatasetSize2908_' # MC24 DatasetSize sweep
+jobName = 'MC24ConstVf2908_' # MC24 constant Vf sweep
 compareParam = 'Dataset' # parameter to plot comparison of
 dataset = 'MC24'
+
+# jobName = 'MC24DatasetSize2908_' # MC24 DatasetSize sweep
+# compareParam = 'Dataset' # parameter to plot comparison of
+# dataset = 'MC24'
 
 # jobName = 'Epsilon2507_' # MC24 DatasetSize sweep
 # compareParam = 'epsilon' # parameter to plot comparison of
@@ -596,6 +596,8 @@ for i in range(repeats): # For each repeat (1=indexed)
             winKernel = 5
         elif dataset == 'MC24':
             winKernel = 7
+        elif dataset == 'MC24x':
+            winKernel = 17
         # SSIM = np.empty(shape = (groundTruths.shape[2]))
         # SSIM_val = np.empty(shape = (groundTruths_val.shape[2]))
 
@@ -1668,56 +1670,119 @@ fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is de
 fig.set_figheight(figHeight)
 fig.set_figwidth(figWidth)
 
-ax = plt.subplot(1,1,1)
+gs = fig.add_gridspec(2, 2, hspace=0, wspace=0)
+
+axs = gs.subplots(sharex='col')
+
+# fig, axs = plt.subplots(2, 2,sharex='col', sharey='row')
+fig.set_figheight(figHeight*2)
+fig.set_figwidth(figWidth*2)
+
+plotparam_s = ['RMSE','SSIM']
+plotDs_s = ['LFC18','MC24']
+lett = np.array([['(a)', '(b)'], ['(c)', '(d)']])
+
+for pli, plotparam in enumerate(plotparam_s):
+    for dsi, plotDs in enumerate(plotDs_s):
+
+        if plotparam == 'RMSE':
+            plotDf = RMSE_Means.loc[RMSE_Means['Dataset'] == plotDs]
+        else:
+            plotDf = SSIM_Means.loc[RMSE_Means['Dataset'] == plotDs]
+
+        # bbox = axs[pli,dsi].get_tightbbox(fig.canvas.get_renderer())
+        axs[pli,dsi].annotate(lett[pli,dsi], xy=(0, 1.05), xycoords="axes fraction", fontsize = 12,bbox=dict(boxstyle='square,pad=0',facecolor='white', edgecolor='none', alpha = 0.8))
+
+        # Percentage improvement
+        perImpro = plotDf
+        perImpro['Improvement'] = 0
+        perImpro['Improvement [%]'] = 0
+        for HP in pd.unique(plotDf['variable']):
+
+            best = perImpro.loc[(perImpro["variable"] == HP) & (perImpro['Value'] == 'Best')][plotparam].values[0]
+            baseline = perImpro.loc[(perImpro["variable"] == HP) & (perImpro['Value'] == 'Default')][plotparam].values[0]
+            improvement = np.abs(best-baseline)
+            relImprovement = 100*np.abs(best-baseline)/baseline # Percentage improvement
+            perImpro.loc[(perImpro["variable"] == HP) & (perImpro['Value'] == 'Best'),'Improvement']= improvement
+            perImpro.loc[(perImpro["variable"] == HP) & (perImpro['Value'] == 'Best'),'Improvement [%]']= relImprovement
+        
+
+        # ax0 = axs[pli,dsi].twinx()
+        # p = sns.pointplot(ax = ax0,data=perImpro,x='variable', y='Improvement [%]', linestyle="none", errorbar=None,marker="_", color = 'green')
 
 
-plotparam = 'SSIM'
-plotDs = 'LFC18'
-if plotparam == 'RMSE':
-    plotDf = RMSE_Means.loc[RMSE_Means['Dataset'] == plotDs]
-else:
-    plotDf = SSIM_Means.loc[RMSE_Means['Dataset'] == plotDs]
-
-p = sns.pointplot(ax = ax,data=plotDf,x='variable', y=plotparam, hue='Value',dodge=.2, linestyle="none", errorbar=None,marker="_")
-
-for n in range(len(MC24_default.iloc[0])):
-    difVals = plotDf.loc[plotDf['variable'] == LFC18_default.iloc[0].index[n]]
-    if not difVals.iloc[0][plotparam] == difVals.iloc[1][plotparam]:
-        # if plotparam == 'RMSE': # RMSE is better if it's lower
-        ax.annotate("",
-        xy=(n, difVals.iloc[0][plotparam]), xycoords='data',
-        xytext=(n, difVals.iloc[1][plotparam]), textcoords='data',
-        arrowprops=dict(arrowstyle="<-",
-                        connectionstyle="arc3", color='k', lw=0.5),
-        )
-            # ax.arrow(x = n, y = difVals.iloc[0][plotparam], dx = 0, dy = difVals.iloc[1][plotparam]-difVals.iloc[0][plotparam],width=.002)
-
-        # else 
-        # ax.annotate("",
-        #     xy=(n, difVals.iloc[1][plotparam]), xycoords='data',
-        #     xytext=(n, difVals.iloc[0][plotparam]), textcoords='data',
-        #     arrowprops=dict(arrowstyle="<-",
-        #                     connectionstyle="arc3", color='k', lw=0.5),
-        #     )
 
 
 
-ax.set_xticklabels( 
-    labels=ax.get_xticklabels(), rotation=90) 
-ax.set_xlabel('')
-plt.grid()
-h,l = ax.get_legend_handles_labels()
-ax.get_legend().remove()
-# ax.set_yscale('log')
-fig.legend(title='Score',handles = h,labels=l, 
-           loc="lower center", ncol=2,bbox_to_anchor=(0.55, -0.15))
+        p = sns.pointplot(ax = axs[pli,dsi],data=plotDf,x='variable', y=plotparam, hue='Value',dodge=.2, linestyle="none", errorbar=None,marker="_")
+
+        for n in range(len(MC24_default.iloc[0])):
+            difVals = plotDf.loc[plotDf['variable'] == LFC18_default.iloc[0].index[n]]
+            if not difVals.iloc[0][plotparam] == difVals.iloc[1][plotparam]:
+                # if plotparam == 'RMSE': # RMSE is better if it's lower
+                axs[pli,dsi].annotate("",
+                xy=(n, difVals.iloc[0][plotparam]), xycoords='data',
+                xytext=(n, difVals.iloc[1][plotparam]), textcoords='data',
+                arrowprops=dict(arrowstyle="<-",
+                                connectionstyle="arc3", color='k', lw=0.5),
+                )
+
+                # Annotate with percentage improvement
+                annotationPer = perImpro.loc[(perImpro["variable"] == LFC18_default.iloc[0].index[n]) & (perImpro['Value'] == 'Best'),'Improvement [%]'].values[0]
+                # if annotationPer > 0.5:
+                if plotparam == 'RMSE':
+                    annotationPer = -annotationPer
+                annotationPer = str(round(annotationPer,1)) + ' %'
+                
+                if plotparam == 'RMSE':
+                    axs[pli,dsi].annotate(annotationPer,
+                    xy=(n, difVals.iloc[1][plotparam]), xycoords='data',rotation=90,
+                    xytext=(2,3), textcoords='offset points', bbox=dict(boxstyle='square,pad=0',facecolor='white', edgecolor='none', alpha = 0.8),
+                    )
+                else:
+                    axs[pli,dsi].annotate(annotationPer,
+                    xy=(n, difVals.iloc[1][plotparam]), xycoords='data',rotation=90,
+                    xytext=(2,-17), textcoords='offset points', bbox=dict(boxstyle='square,pad=0',facecolor='white', edgecolor='none', alpha = 0.8),
+                    )
+
+                    # ax.arrow(x = n, y = difVals.iloc[0][plotparam], dx = 0, dy = difVals.iloc[1][plotparam]-difVals.iloc[0][plotparam],width=.002)
+
+                # else 
+                # ax.annotate("",
+                #     xy=(n, difVals.iloc[1][plotparam]), xycoords='data',
+                #     xytext=(n, difVals.iloc[0][plotparam]), textcoords='data',
+                #     arrowprops=dict(arrowstyle="<-",
+                #                     connectionstyle="arc3", color='k', lw=0.5),
+                #     )
+
+        axs[pli,dsi].label_outer()
+        axs[pli,dsi].tick_params(axis='x',labelrotation=90)
+       
+        axs[pli,dsi].set_xlabel('')
+     
+        axs[pli,dsi].grid()
+        h,l = axs[pli,dsi].get_legend_handles_labels()
+        axs[pli,dsi].get_legend().remove()
+
+
+        fig.legend(title='Score',handles = h,labels=l, 
+                loc="lower center", ncol=2,bbox_to_anchor=(0.55, -0.15))
+
+
+
+        
+
+
+
+
+
 
 # plt.savefig('LFC18_MeanRMSE_Improvement.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
-plt.savefig('LFC18_MeanSSIM_Improvement.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
+# plt.savefig('LFC18_MeanSSIM_Improvement.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
 
 # plt.savefig('MC24_MeanRMSE_Improvement.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
 # plt.savefig('MC24_MeanSSIM_Improvement.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
-
+plt.savefig('MeanRMSESSIM_Improvements.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
 plt.show()
 # %% Mean HP improvements plot
 

@@ -54,9 +54,70 @@ import argparse
 plt.style.use("seaborn-v0_8-colorblind")
 sampleNum = 0
 
-# %% Import both datasets
+# %% Import all datasets
 
-# MC24 dataset
+# MC24 extended needs slightly different loading method
+
+gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid_224.json"
+with open(gridPath) as json_file: # load into dict
+    MC24x_grid = np.array(json.load(json_file)) # grid for plotting
+
+MC24x_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20241017_1550_224_4kSamples"
+MC24x_numSamples = len(os.listdir(MC24x_path)) # Number of data samples (i.e. TBDC specimens)
+MC24x_sampleShape = [224,224]
+MC24x_xNames = ['Ex','Ey','Gxy','Vf','c2'] # Names of input features in input csv
+MC24x_yNames = ['FI'] # Names of ground truth features in input csv
+samplesPerFile = 40
+numSamples = len(os.listdir(MC24x_path))*samplesPerFile
+
+
+def loadSamplex(path = str,xNames = list, yNames = list, sampleShape=list):
+  '''
+  Imports data in parquet and formats into a tensorflow dataset
+  '''
+  # Read sample csv data
+  sample = pd.read_parquet(path, engine='auto')
+  headers = np.array(sample.columns.values.tolist())
+  samples = [y for x, y in sample.groupby('specimen')] # Group by specimen
+  samples = np.array(list(map(lambda x: x.to_numpy(), samples))) # Put in 3D array
+  samples = samples.reshape(samples.shape[0],sampleShape[0],sampleShape[1],-1) # Reshape to 2D
+
+
+  # Find indeces of input features 
+  featureIdx = []
+  for name in xNames:
+    featureIdx += [np.where(headers == name)[0][0]]
+
+  # Find indeces of ground truth features 
+  gtIdx = []
+  for name in yNames:
+    gtIdx += [np.where(headers == name)[0][0]]
+
+  X = samples[:,:,:,featureIdx] # Input features
+
+  Y = samples[:,:,:,gtIdx] # Labels
+
+  ds = tf.data.Dataset.from_tensor_slices((X, Y))
+
+  return headers, ds
+
+# Import all data samples and store in one dataset
+for i,file in enumerate(os.listdir(MC24x_path)):
+    print('Now loading file number {num} out of {total}'.format(num = i+1, total = numSamples/samplesPerFile))
+    filepath = os.path.join(MC24x_path,file)
+    if i==0:
+        headers, samples = loadSamplex(filepath, xNames = MC24x_xNames, yNames = MC24x_yNames, sampleShape=MC24x_sampleShape)
+    else:
+        addSamp = loadSamplex(filepath, xNames = MC24x_xNames, yNames = MC24x_yNames, sampleShape=MC24x_sampleShape)[1]
+        MC24x_samples = samples.concatenate(addSamp)
+
+
+
+
+# %%
+
+
+
 gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
 with open(gridPath) as json_file: # load into dict
     MC24_grid = np.array(json.load(json_file)) # grid for plotting
@@ -225,6 +286,7 @@ MC24_X_Unseen = MC24_samples2D_Unseen[:,:,:,MC24_featureIdx_Unseen]  # Input fea
 
 MC24_Y_Unseen = MC24_samples2D_Unseen[:,:,:,MC24_gtIdx_Unseen] # Labels
 
+
 # %% Do predictions on unseen samples
 
 # Load model
@@ -286,15 +348,13 @@ def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None,
         cbar.set_label(cbarlab, rotation=270,labelpad=7)
     
     plt.ylabel(ylab)
-    plt.xlabel(xlab)
+    plt.title(xlab)
+    # plt.xlabel(xlab)
     ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
     # cbar = fig.colorbar(CS,ticks=[np.min(samples2D), np.max(samples2D)], shrink = 0.8)
     
     # cbar.ax.locator_params(nbins=cBarBins)
-    
-
-
 
 # %% Plot unaltered MC24 and LFC18 samples
 
@@ -307,7 +367,7 @@ matplotlib.rcParams["font.family"] = "Arial"
 matplotlib.rcParams['axes.linewidth'] = 0.25
 plt.rc('axes', axisbelow=True)
 # matplotlib.rcParams["mathtext.fontset"] = 'stixsans'
-plt.rcParams["font.size"] = "6"
+plt.rcParams["font.size"] = "4"
 latexWidth = 315
 figWidth = latexWidth*px
 Ratio = (138/50)# Specimen ratio
@@ -322,54 +382,114 @@ fig.set_figheight(figHeight)
 fig.set_figwidth(figWidth)
 sampleNum = 0
 
+
+# Prep MC24x sample for plotting
+MC24x_samp = MC24x_samples.take(1)
+MC24x_X = np.zeros((MC24x_sampleShape[0],MC24x_sampleShape[1], len(MC24x_xNames)))
+MC24x_Y = np.zeros((MC24x_sampleShape[0],MC24x_sampleShape[1], len(MC24x_yNames)))
+
+for images, labels in MC24x_samp:
+    for n in range(len(MC24x_xNames)):
+        MC24x_X[:,:,n] = images[:,:,n].numpy()
+    MC24x_Y = labels.numpy()
+
+MC24x_plotSamp = np.concatenate((MC24x_Y,MC24x_X), axis = -1)
 # Ex
-ax = plt.subplot(2, 6, 1)
+# ax = plt.subplot(1, 1, 1)
+# tmp = np.where(MC24_headers == 'Ex')[0][0]
+# plot_contour(grid = MC24x_grid, samples2D = MC24x_X[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24_extended', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+# ax.set_aspect('equal', 'box')
+    # ax = plt.subplot(4, 8, i + 1)
+    # plot_contour(grid = LFC18_grid, samples2D = images[i].numpy(),  ax = ax, xlab = None, ylab = 'LFC18', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+    # plt.imshow(images[i].numpy().astype("uint8"))
+
+
+
+
+
+# Ex
+ax = plt.subplot(3, 6, 1)
 tmp = np.where(LFC18_headers == 'Ex')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'LFC18', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'E$_{x}$', ylab = 'LFC18', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
 
-ax = plt.subplot(2, 6, 6+1)
+ax = plt.subplot(3, 6, 6+1)
 tmp = np.where(MC24_headers == 'Ex')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ex', ylab = 'MC24', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
 
+ax = plt.subplot(3, 6, 12+1)
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24$_{extended}$', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # Ey
-ax = plt.subplot(2, 6, 2)
+ax = plt.subplot(3, 6, 2)
 tmp = np.where(LFC18_headers == 'Ey')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'E$_{y}$', ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
 
-ax = plt.subplot(2, 6, 6+2)
+ax = plt.subplot(3, 6, 6+2)
 tmp = np.where(MC24_headers == 'Ey')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Ey', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
 
+ax = plt.subplot(3, 6, 12+2)
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # Gxy
-ax = plt.subplot(2, 6, 3)
+ax = plt.subplot(3, 6, 3)
 tmp = np.where(LFC18_headers == 'Gxy')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'G$_{xy}$', ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
 
-ax = plt.subplot(2, 6, 6+3)
+ax = plt.subplot(3, 6, 6+3)
 tmp = np.where(MC24_headers == 'Gxy')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'Gxy', ylab = None, cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+
+ax = plt.subplot(3, 6, 12+3)
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # Vf
-ax = plt.subplot(2, 6, 6+4)
+ax = plt.subplot(3, 6, 4)
+plt.title('V$_{f}$')
+ax.axis("off")
+
+ax = plt.subplot(3, 6, 6+4)
 tmp = np.where(MC24_headers == 'Vf')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'Vf', ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+
+ax = plt.subplot(3, 6, 12+4)
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # Cos squared
-ax = plt.subplot(2, 6, 6+5)
-tmp = np.where(MC24_headers == 'c2')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'c2', ylab = None, cbarlab = 'cos^2(q)', cBarBins = 3)
+ax = plt.subplot(3, 6, 5)
+plt.title('c$_{2}$')
+ax.axis("off")
 
+ax = plt.subplot(3, 6, 6+5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'cos$^{2}$(q)', cBarBins = 3)
+
+ax = plt.subplot(3, 6, 12+5)
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'cos$^{2}$(q)', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # FI
-ax = plt.subplot(2, 6, 6)
+ax = plt.subplot(3, 6, 6)
 tmp = np.where(LFC18_headers == 'FI')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'FI', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
 
-ax = plt.subplot(2, 6, 6+6)
+ax = plt.subplot(3, 6, 6+6)
 tmp = np.where(MC24_headers == 'FI')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'FI', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+
+ax = plt.subplot(3, 6, 12+6)
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+ax.set_aspect('equal', 'box')
 
 # Uncomment to save
 plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
@@ -647,10 +767,10 @@ def distPlot(df, features):
 
 
 # All data points
-# distPlot(AllDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
+distPlot(AllDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
 # plt.savefig('DataDistributions.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
-distPlot(VfVariationDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
-plt.savefig('DataDistributions_constVf.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+# distPlot(VfVariationDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
+# plt.savefig('DataDistributions_constVf.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 plt.show()
 
 # %% Correlations with FI
@@ -1802,6 +1922,7 @@ plt.style.use("seaborn-v0_8-colorblind")
 
 samples = [0,1,2]
 sampleShape = [55,20]
+dataset = 'LFC18'
 groundTruths = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
 predictions = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
 
@@ -1860,10 +1981,10 @@ fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is de
 fig.set_figheight(figHeight)
 fig.set_figwidth(figWidth)
 
-harMean = 2/(1/8 + 1/50)
-pixelLength = 2.5
+# harMean = 2/(1/8 + 1/50)
+# pixelLength = 2.5
 
-charLengthPixels = harMean/pixelLength
+# charLengthPixels = harMean/pixelLength
 
 
 rows = len(samples)
@@ -1879,7 +2000,15 @@ for i in samples:
 
     # PSNR = cv2.PSNR(im1, im2)
 
-    winKernel = int(np.floor(charLengthPixels)) # Takwe as material characteristic length
+    # winKernel = int(np.floor(charLengthPixels)) # Takwe as material characteristic length
+    if dataset == 'LFC18':
+        winKernel = 5
+    elif dataset == 'MC24':
+        winKernel = 7
+    elif dataset == 'MC24x':
+        winKernel = 13
+    
+    
     range = np.max(im1) - np.min(im1)
     SSIM, simIm = ski.metrics.structural_similarity(im1, im2, win_size=winKernel, gradient=False, data_range=range, channel_axis=None, gaussian_weights=False, full=True)
 
