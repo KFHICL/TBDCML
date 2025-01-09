@@ -26,7 +26,8 @@ import argparse
 
 # %% find results and training history files and load these + 
 
-jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241213_MC24x_Baseline'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241213_MC24x_Baseline'
+jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241223_AltModels_Baseline'
 trainEpochs = 1000
 
 
@@ -228,9 +229,9 @@ def plotResults(resDf, idx):
 histDf = formatHistory(histories,histCols = histCols)
 resDf = formatResults(results,resCols = resCols)
 # %% Make plots
-idx = [1] # Activation func
+idx = [1,6] # Activation func
 
 plotHist(histDf, idx)
 plotResults(resDf, idx)
 
-# plt.show()
+plt.show()

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+TESTING = 1
 # os.environ["TF_USE_LEGACY_KERAS"]="1" # Needed to import models saved before keras 3.0 release
 # import tf_keras as keras # Legacy keras version which is equal to the one on the HPC
 
@@ -72,7 +72,8 @@ resultpath = 'results_{jn}_{num}.json'.format(jn=jobname, num = parallel)
 resultpath = os.path.join('dataoutTESTJOB',resultpath)
 #%% Import data
 # trainDat_path = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\datain'
-trainDat_path = r'C:\Users\kfh23\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
+# trainDat_path = r'C:\Users\kfh23\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
+trainDat_path = r'C:\Users\kaspe\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
 
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   trainDat_name = 'Gaudron2018' 
@@ -172,6 +173,8 @@ elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224
 
 yNames = ['FI'] # Names of ground truth features in input csv
 numSamples = len(os.listdir(trainDat_path))*samplesPerFile # number of samples is number of files in datain
+if TESTING:
+  numSamples = 40
 batchSize = params['batchSize'] # Batch size for training
 valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
 testSize = math.floor(params['testSize']*numSamples)
@@ -364,7 +367,8 @@ def loadSampleNew(path):
 
 def load_all_samples(trainDat_path, numSamples):
     files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
-
+    if TESTING == 1:
+      files = files[0:1]
 
     def process_file(filepath):
         headers, values = loadSampleNew(filepath)
@@ -395,7 +399,8 @@ def load_all_samples(trainDat_path, numSamples):
     return headers, samples
 
 headers, samples = load_all_samples(trainDat_path, numSamples)
-
+if TESTING == 1:
+  batchSize = 2
 
 samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
 train_ds = samples.take(train_length)
@@ -883,10 +888,11 @@ elif params['loss'] == 'Custom5':
 
 
 # %% Alternative model architectures
+# Architectures are often designed for minmax scaling of features between -1 and 1.
+# Data is passed normalised to mean 0 and std 1, which is close enough
 
-def Xception_Model(inputShape):
+def Xception_Model(inputShape): # Expects scaled inputs in range -1 to 1
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
-  x = tf.keras.applications.xception.preprocess_input(input)
   
   base_model = tf.keras.applications.Xception(
       include_top=False,
@@ -896,14 +902,12 @@ def Xception_Model(inputShape):
       pooling=None,
       name="xception",
   )
-  x = base_model(inputs = x)
+  x = base_model(inputs = input)
   return input, x
 
-xCeptionIn, xCeptionOut = Xception_Model(inputShape = X_trainShape[1:])
 
-def mobileNetV2_Model(inputShape):
+def mobileNetV2_Model(inputShape): # Expects scaled inputs in range -1 to 1
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
-  x = tf.keras.applications.xception.preprocess_input(input)
   
   base_model = tf.keras.applications.MobileNetV2(
       include_top=False,
@@ -913,68 +917,328 @@ def mobileNetV2_Model(inputShape):
       pooling=None,
       name="mobilenetV2",
   )
-  x = base_model(inputs = x)
+  x = base_model(inputs = input)
   return input, x
 
-mobileNetV2In, mobileNetV2Out = mobileNetV2_Model(inputShape = X_trainShape[1:])
+def VGG16_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.VGG16(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="vgg16",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ResNet50_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ResNet50(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="ResNet50",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ResNet50V2_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ResNet50V2(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="ResNet50V2",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def InceptionV3_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.InceptionV3(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="InceptionV3",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def InceptionResNetV2_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.InceptionResNetV2(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="InceptionResNetV2",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def DenseNet121_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.DenseNet121(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="DenseNet121",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def NASNetMobile_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.NASNetMobile(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    name="NASNetMobile",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def EfficientNetV2S_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2S(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="efficientnetv2-s",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def EfficientNetV2M_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2M(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="efficientnetv2-m",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def EfficientNetV2L_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2L(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="efficientnetv2-l",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def ConvNeXtTiny_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtTiny(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="ConvNeXtTiny",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ConvNeXtSmall_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtSmall(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="ConvNeXtSmall",
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ConvNeXtLarge_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtLarge(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+    name="ConvNeXtLarge",
+  )
+  x = base_model(inputs = input)
+  return input, x
 
 
 def applyDecoder(input, x, outputShape, params):
   bnShape = x.shape # bottleneck
   inShape = bnShape[1] # assuming square
   outShape = outputShape[1]
-  strides = range(1,inShape+1) # Acceptable strides
-  kernels = range(1,inShape+1) # Acceptable kernel sizes
-  padding = range(1,inShape+1) # Acceptable padding sizes
-  combinations = []
-  for k in kernels:
-     for s in strides:
-        for p in padding:
-          if s*(inShape-1)+k-2*p == outShape:
-            combinations += [k,s]
+  # strides = range(1,inShape+1) # Acceptable strides
+  # kernels = range(1,inShape+1) # Acceptable kernel sizes
+  # padding = range(1,inShape+1) # Acceptable padding sizes
+  # combinations = []
+  # for k in kernels:
+  #    for s in strides:
+  #       for p in padding:
+  #         if s*(inShape-1)+k-2*p == outShape:
+  #           combinations += [k,s]
+  s = int(outShape/inShape) # Should be 32 (stride)
+  pd = "same"
+  if inShape == 5: # Need to upsamples to 7x7 for correct inverse conv
+    x = tf.keras.layers.Resizing(
+    height = 7,
+    width = 7,
+    interpolation='bilinear',
+    crop_to_aspect_ratio=False,
+    pad_to_aspect_ratio=False,
+    fill_mode='constant',
+    fill_value=0.0,
+    data_format=None,
+    )(x)
 
+    s = int(outShape/7)
 
   outputs = tf.keras.layers.Conv2DTranspose(filters = 1, # One filter for one output channel
                                       kernel_size = 3,
-                                      strides = int(outShape/inShape),
-                                      padding = "same")(x)
+                                      strides = s,
+                                      padding = pd)(x)
   
   model = tf.keras.Model(input, outputs)
   return model
 
 
-match params['type']:
-   case 'MobileNetV2':
-      input, output = mobileNetV2_Model(inputShape = X_trainShape[1:])
-      CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
+# %% UNET
+
+def TBDCNet_UNet(inputShape, outputShape, params):
+   '''
+  This function returns a UNet model based on the hyperparameters in the
+  sweep definition
+  
+
+  Args
+  ----------
+  inputShape: the input image shape
+  outputShape: the prediction image shape (currently unused)
+  params: The hyperparameters for the given sweep index
+
+  Returns
+  ----------
+  model: tensorflow model
+
+  '''
+   def double_convBlock(x,filters, params): # Convolutional block
+      x = tf.keras.layers.Conv2D(filters, kernel_size = 3, strides = 1, padding = "same", activation = "relu", kernel_initializer = "glorot_uniform")(x)
+      x = tf.keras.layers.Conv2D(filters, kernel_size = 3, strides = 1, padding = "same", activation = "relu", kernel_initializer = "glorot_uniform")(x)
+      return x
+   
+
+   def downSamplingBlock(x,filters, params): # Downsampling block in the encoder
+      skip = double_convBlock(x, filters, params)
+      x = tf.keras.layers.MaxPool2D(2)(skip)
+      x = tf.keras.layers.Dropout(params['dropout'])(x)
+      return skip,x
+   
+   def upSamplingBlock(x,skip,filters, params): # Upsampling block in the decoder
+      x = tf.keras.layers.Conv2DTranspose(filters, kernel_size = 3, strides = 2, padding="same")(x)
+      x = tf.keras.layers.concatenate([x, skip]) # Skip connection
+      x = tf.keras.layers.Dropout(params['dropout'])(x)
+      x = double_convBlock(x, filters, params)
+      return x
 
 
-# Compile model with the optimizer in the sweep definition
-if params['optimizer'] == 'Adadelta':
-    CNNModel.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-            loss=lossfunc, 
-            metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-elif params['optimizer'] == 'Nadam':
-    CNNModel.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-            loss=lossfunc, 
-            metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-else:
-    CNNModel.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-            loss=lossfunc, 
-            metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+   x = normalizer(input)
+   if params['dsAugmentation'] == 1:
+    x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
+
+   # Encoder
+   skip1, x1 = downSamplingBlock(x, 64, params)
+   skip2, x2 = downSamplingBlock(x1, 128, params)
+   skip3, x3 = downSamplingBlock(x2, 256, params)
+   skip4, x4 = downSamplingBlock(x3, 512, params)
+
+   # Bottlenexk
+  
+   bottleneck = double_convBlock(x4, 1024, params)
+
+   # Decoder
+
+   u6 = upSamplingBlock(bottleneck, skip4, 512, params)
+   u7 = upSamplingBlock(u6, skip3, 256, params)
+   u8 = upSamplingBlock(u7, skip2, 128, params)
+   u9 = upSamplingBlock(u8, skip1, 64, params)
+
+   # Final layer
+   outputs = tf.keras.layers.Conv2D(1, 3, padding="same", activation = "linear")(u9)
+   # unet model with Keras Functional API
+   unet_model = tf.keras.Model(input, outputs, name="U-Net")
+
+   return unet_model
+
+# testList = [ 
+#     'Xception',
+#     'MobileNetV2',
+#     'VGG16',
+#     'ResNet50',
+#     'ResNet50V2',
+#     'InceptionV3',
+#     'InceptionResNetV2',
+#     'DenseNet121',
+#     'NASNetMobile',
+#     'EfficientNetV2S',
+#     'EfficientNetV2M',
+#     'EfficientNetV2L',
+#     'ConvNeXtTiny',
+#     'ConvNeXtSmall',
+#     'ConvNeXtLarge'
+# ]
 
 
-xCeptionModel = applyDecoder(input = xCeptionIn, x= xCeptionOut, outputShape = y_trainShape[1:], params = params)
 
-xCeptionModel.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=tf.keras.losses.MeanSquaredError(), 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
 
-mobileNetV2Model = applyDecoder(input = mobileNetV2In, x= mobileNetV2Out, outputShape = y_trainShape[1:], params = params)
 
-mobileNetV2Model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=tf.keras.losses.MeanSquaredError(), 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
 
 # x = tf.keras.layers.Conv2DTranspose(filters = 32, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',strides = 2,activation=params['conv1Activation'])(x)
   
@@ -1077,7 +1341,68 @@ tf.keras.backend.clear_session() # Clear the state and frees up memory
 
 # CNN Model creation
 # modelCNN = TBDCNet_modelCNN(inputShape = train_in_shape[1:], outputShape = train_out_shape[1:], params = params)
-modelCNN = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+# modelCNN = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+
+
+match params['type']:
+  case 'Xception':
+      input, output = Xception_Model(inputShape = X_trainShape[1:])
+  case 'MobileNetV2':
+      input, output = mobileNetV2_Model(inputShape = X_trainShape[1:])
+  case 'VGG16':
+      input, output = VGG16_Model(inputShape = X_trainShape[1:])
+  case 'ResNet50':
+      input, output = ResNet50_Model(inputShape = X_trainShape[1:])
+  case 'ResNet50V2':
+      input, output = ResNet50V2_Model(inputShape = X_trainShape[1:])
+  case 'InceptionV3':
+      input, output = InceptionV3_Model(inputShape = X_trainShape[1:])
+  case 'InceptionResNetV2':
+      input, output = InceptionResNetV2_Model(inputShape = X_trainShape[1:])
+  case 'DenseNet121':
+      input, output = DenseNet121_Model(inputShape = X_trainShape[1:])
+  case 'NASNetMobile':
+      input, output = NASNetMobile_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2S':
+      input, output = EfficientNetV2S_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2M':
+      input, output = EfficientNetV2M_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2L':
+      input, output = EfficientNetV2L_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtTiny':
+      input, output = ConvNeXtTiny_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtSmall':
+      input, output = ConvNeXtSmall_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtLarge':
+      input, output = ConvNeXtLarge_Model(inputShape = X_trainShape[1:])
+  case 'UNet':
+      CNNModel = TBDCNet_UNet(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+  case 'default':
+      CNNModel = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+
+def preModel_compile(CNNModel):
+  # Compile model with the optimizer in the sweep definition
+  if params['optimizer'] == 'Adadelta':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  elif params['optimizer'] == 'Nadam':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  else:
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  return CNNModel
+
+if not params['type'] == 'default':
+   if not params['type'] == 'UNet':
+    CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
+   CNNModel = preModel_compile(CNNModel)
+
+
+CNNModel.summary()
 
 modelCNNname = 'CNNModel1'
 
@@ -1090,24 +1415,7 @@ modelCNNname = 'CNNModel1'
 # Fit model to Failure index
 epochs = 1000
 time_callback_ins = timecallback()
-
-mobileNetV2Model_history = mobileNetV2Model.fit(train_ds,
-                                epochs=epochs,
-                                steps_per_epoch=steps_per_epoch,
-                                validation_data=val_ds,
-                                validation_steps = validation_steps,
-                                callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
-                                )
-
-xCeptionModel_history = xCeptionModel.fit(train_ds,
-                                epochs=epochs,
-                                steps_per_epoch=steps_per_epoch,
-                                validation_data=val_ds,
-                                validation_steps = validation_steps,
-                                callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
-                                )
-
-modelCNN_history = modelCNN.fit(train_ds,
+modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
                                 steps_per_epoch=steps_per_epoch,
                                 validation_data=val_ds,
@@ -1126,7 +1434,7 @@ epoch_times = {'trainTime':time_callback_ins.get_epoch_times().tolist()}
 trainingHist = modelCNN_history.history # save training history
 trainingHist.update(epoch_times) # Add training time to history
 
-modelCNN.load_weights(os.path.join(checkpoint_dir,cpLoadName)) # load best model weights
+CNNModel.load_weights(os.path.join(checkpoint_dir,cpLoadName)) # load best model weights
 
 # predCNN = modelCNN.predict(train_ds_eval)
 # predCNN_val = modelCNN.predict(val_ds_eval)
@@ -1201,7 +1509,7 @@ results = pd.concat([train_results, val_results, test_results])
 results['RMSE'] = np.sqrt(results['mean_squared_error'])
 
 
-train_results = modelCNN.evaluate(
+train_results = CNNModel.evaluate(
     x=train_ds_eval,
     y=None,
     batch_size=None,
@@ -1215,7 +1523,7 @@ train_results = modelCNN.evaluate(
 train_results = pd.DataFrame.from_dict(train_results, orient='index',
                        columns=['train']).T
 
-val_results = modelCNN.evaluate(
+val_results = CNNModel.evaluate(
     x=val_ds_eval,
     y=None,
     batch_size=None,
@@ -1229,7 +1537,7 @@ val_results = pd.DataFrame.from_dict(val_results, orient='index',
                        columns=['val']).T
 
 
-test_results = modelCNN.evaluate(
+test_results = CNNModel.evaluate(
     x=test_ds_eval,
     y=None,
     batch_size=None,
@@ -1309,7 +1617,7 @@ with open(resultpath, 'w') as f: # Dump data to json file at specified path
 #     json.dump(RMSE_val.result().numpy().tolist(), f, indent=2)
 
 # Save the model
-modelCNN.save(modelOutPath)
+CNNModel.save(modelOutPath)
 # %% Various tests
 # numSamples = 100
 # kFold = 10

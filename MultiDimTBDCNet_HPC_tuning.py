@@ -41,9 +41,7 @@ import random
 import time
 import math
 import datetime
-import shutil
 import json
-import scipy
 import tensorflow as tf
 import sklearn
 from sklearn import preprocessing
@@ -132,6 +130,17 @@ elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samp
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
 
+elif params['Dataset'] == 'MC24_1000VfConst': # MECOMPOSITES MODEL FROM 2024 (1000 samples where Vf is kept constant for transfer learning study)
+  trainDat_name = 'MatLabModel2024_1000SamplesVfConstant' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
+
 elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
   trainDat_name = 'MatLabModel2024_10000' 
   sampleShape = [60,20]
@@ -176,12 +185,14 @@ elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 sa
 trainDat_path = os.path.join('datain',trainDat_name)
 numSamples = len(os.listdir(trainDat_path)) # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
-trainValRatio = params['trainValRatio'] # Training and validation data split ratio
-train_length = round(numSamples * trainValRatio) # Number of training samples 
+valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
+testSize = math.floor(params['testSize']*numSamples)
+trainValRatio = 1-params['valSize'] # For transfer learning study take no test set
+train_length = numSamples-valSize-testSize # Number of training samples 
 epochs = params['Epochs'] # Max epochs for training
-steps_per_epoch = train_length // batchSize # Number of batches in an epoch
-validation_steps = math.ceil((numSamples-train_length) / batchSize) # Validation batches (generally not needed)
-
+# epochs = 500 # Max epochs for training
+steps_per_epoch = train_length // batchSize
+validation_steps = valSize // batchSize
 
 # Paths for data output
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
