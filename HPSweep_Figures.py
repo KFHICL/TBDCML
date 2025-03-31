@@ -45,7 +45,15 @@ plt.style.use("seaborn-v0_8-colorblind")
 
 trainEpochs = 1000 #500 # Maximum number of epochs for trained models
 # Results:
-resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+    # Get the current directory and navigate up to the "Individual Project" directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(current_dir) != "Individual Project":
+    current_dir = os.path.dirname(current_dir)
+
+# Join the path with "\Data\CNNTrainingSweepsResults"
+resultFolder = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults")
+
+# resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
 
 # Use to point to a specific model to compare on unseen data
 
@@ -204,7 +212,11 @@ testUnseen = False # We can load a model and test it on an unseen dataset.
 # compareParam = 'Index' # parameter to plot comparison of
 # dataset = 'MC24'
 
-jobName = 'MC24ConstVf2908_' # MC24 constant Vf sweep
+# jobName = 'MC24ConstVf2908_' # MC24 constant Vf sweep
+# compareParam = 'Dataset' # parameter to plot comparison of
+# dataset = 'MC24'
+
+jobName = '20241219_MC241000ConstVf_TL_' # MC24 constant Vf sweep
 compareParam = 'Dataset' # parameter to plot comparison of
 dataset = 'MC24'
 
@@ -1061,12 +1073,12 @@ ax = plt.subplot(1,1,1)
 # lp = sns.lineplot(data = mHistDf,x="Epoch", y="Loss",
 #               hue="Dataset",style = 'Data', palette = 'colorblind',linewidth = 0.5)
 
-# lp = sns.lineplot(data = mHistDf.loc[mHistDf['Dataset'].isin(['MC24','MC24_1000'])],x="Epoch", y="Loss",
-#               hue="Dataset",style = 'Data', palette = 'colorblind',linewidth = 0.5,size="Data",sizes = [0.4,0.2])
-lp = sns.lineplot(data = mHistDf.loc[mHistDf['epsilon'].isin([0.0000001,0.001,0.1])],x="Epoch", y="Loss",
-              hue="epsilon",style = 'Data', palette = 'colorblind',linewidth = 0.5,size="Data",sizes = [0.4,0.2])
-ax.set_ylim([0.1,1])
-ax.set_yscale('log')
+lp = sns.lineplot(data = mHistDf,x="Epoch", y="Loss",
+              hue="Dataset",style = 'Data', palette = 'colorblind',linewidth = 0.5,size="Data",sizes = [0.4,0.2])
+# lp = sns.lineplot(data = mHistDf.loc[mHistDf['epsilon'].isin([0.0000001,0.001,0.1])],x="Epoch", y="Loss",
+#               hue="epsilon",style = 'Data', palette = 'colorblind',linewidth = 0.5,size="Data",sizes = [0.4,0.2])
+ax.set_ylim([0,0.03])
+# ax.set_yscale('log')
 ax.grid(axis = 'y',which = 'minor')
 plt.grid()
 ax.minorticks_on()
@@ -1101,7 +1113,7 @@ fig.legend(title='',handles = h,labels=l,
 # ax.grid(axis = 'y',which = 'minor')
 # ax.minorticks_on()
 
-plt.savefig('Epsilon_TrainingCurves.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
+plt.savefig('TL_TrainingCurves.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
 plt.show()
 
 
