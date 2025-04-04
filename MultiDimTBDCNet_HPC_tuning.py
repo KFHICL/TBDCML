@@ -43,9 +43,6 @@ import math
 import datetime
 import json
 import tensorflow as tf
-import sklearn
-from sklearn import preprocessing
-import sklearn.model_selection
 from sklearn.preprocessing import StandardScaler
 
 import numpy as np
@@ -56,11 +53,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import argparse
 
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
+
 #####################################################################
 # Settings
 #####################################################################
 
-yNames = ['FI'] # Names of ground truth features in input csv - label to be predicted
+yNames = ['FI'] # Names of ground truth features in input csv - label to be predictednormalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
+normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
+
 
 # For reproducible results set a seed
 seed = 0
@@ -83,13 +85,14 @@ sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of s
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
-
+jobname = args.jobname[:-2]
 # Dataset selection
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   trainDat_name = 'Gaudron2018' 
   sampleShape = [55,20]
   xNames = ['E11','E22','E12'] # Names of input features in input csv
-
+  samplesPerFile = 1
+  winKernel = 5
 elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   trainDat_name = 'MatLabModel2024' 
   sampleShape = [60,20]
@@ -99,7 +102,8 @@ elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 samples)
   trainDat_name = 'MatLabModel2024_200' 
   sampleShape = [60,20]
@@ -109,7 +113,8 @@ elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (200 sample
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 samples)
   trainDat_name = 'MatLabModel2024_500' 
   sampleShape = [60,20]
@@ -119,7 +124,8 @@ elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (500 sample
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
   trainDat_name = 'MatLabModel2024_1000' 
   sampleShape = [60,20]
@@ -129,6 +135,20 @@ elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samp
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 1
+  winKernel = 7
+
+elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224 resolution)
+  trainDat_name = 'MatLabModel2024_224_4kSamples' 
+  sampleShape = [224,224]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 40
+  winKernel = 17
 
 elif params['Dataset'] == 'MC24_1000VfConst': # MECOMPOSITES MODEL FROM 2024 (1000 samples where Vf is kept constant for transfer learning study)
   trainDat_name = 'MatLabModel2024_1000SamplesVfConstant' 
@@ -183,7 +203,7 @@ elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 sa
 
 # Various settings
 trainDat_path = os.path.join('datain',trainDat_name)
-numSamples = len(os.listdir(trainDat_path)) # Number of data samples (i.e. TBDC specimens)
+numSamples = len(os.listdir(trainDat_path))*samplesPerFile # number of samples is number of files in datain
 batchSize = params['batchSize'] # Batch size for training
 valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
 testSize = math.floor(params['testSize']*numSamples)
@@ -216,6 +236,8 @@ RMSEOutPath = 'RMSE_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel
 RMSEOutPath = os.path.join('dataout',RMSEOutPath)
 RMSEOutPath_val = 'RMSE_val_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # RMSE of model to quickly compare models when many are trained in a sweep
 RMSEOutPath_val = os.path.join('dataout',RMSEOutPath_val)
+resultpath = 'results_{jn}_{num}.json'.format(jn=jobname, num = args.parallel)
+resultpath = os.path.join('dataout',resultpath)
 
 #####################################################################
 # Data functions
@@ -251,50 +273,50 @@ def loadSample(path = str): # Load a specimen (old and slow version, but more in
 
 
 # New sample loading routine which is faster but less interpretable
-def loadSampleNew(path):
-    '''
-    Load single specimen
-    '''
-    # Assuming loadSample uses pandas to read the CSV file
-    # Adjust the delimiter and header options as needed
-    sample = pd.read_csv(path)
-    headers = sample.columns.values.tolist()
-    values = np.array(sample)
+# def loadSampleNew(path):
+#     '''
+#     Load single specimen
+#     '''
+#     # Assuming loadSample uses pandas to read the CSV file
+#     # Adjust the delimiter and header options as needed
+#     sample = pd.read_csv(path)
+#     headers = sample.columns.values.tolist()
+#     values = np.array(sample)
 
-    if "coordinates" in headers: 
-      coordIdx = headers.index("coordinates")
-      if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
-        coords = formatCoords(values,coordIdx)
-        values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+#     if "coordinates" in headers: 
+#       coordIdx = headers.index("coordinates")
+#       if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+#         coords = formatCoords(values,coordIdx)
+#         values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
 
-      headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
-    headers = np.array(headers)
-    return headers, values
+#       headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+#     headers = np.array(headers)
+#     return headers, values
 
 
-def load_all_samples(trainDat_path, numSamples):
-    '''
-    Load all specimens in path
-    '''
-    files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
-    headers_list = []
-    samples_list = []
+# def load_all_samples(trainDat_path, numSamples):
+#     '''
+#     Load all specimens in path
+#     '''
+#     files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
+#     headers_list = []
+#     samples_list = []
 
-    def process_file(filepath):
-        headers, values = loadSampleNew(filepath)
-        return headers, values
+#     def process_file(filepath):
+#         headers, values = loadSampleNew(filepath)
+#         return headers, values
 
-    with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(process_file, file): file for file in files}
-        for i, future in enumerate(as_completed(futures)):
-            headers, result = future.result()
-            if i == 0:
-                headers_list = headers  # Use headers from the first file
-            samples_list.append(result)
-            # print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
+#     with ThreadPoolExecutor() as executor:
+#         futures = {executor.submit(process_file, file): file for file in files}
+#         for i, future in enumerate(as_completed(futures)):
+#             headers, result = future.result()
+#             if i == 0:
+#                 headers_list = headers  # Use headers from the first file
+#             samples_list.append(result)
+#             # print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
 
-    samples_array = np.array(samples_list)
-    return headers_list, samples_array
+#     samples_array = np.array(samples_list)
+#     return headers_list, samples_array
 
 
 randAug = tf.random.Generator.from_seed(seed) # Random number generator used for random augmentations
@@ -388,14 +410,158 @@ def show_prediction(sample, predictions, names, ground_truth, grid):
     fig.colorbar(CS2)
     plt.title(names[idx])
 
+# Format is csv files with columns 
+# Try new method of loading samples
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def loadSampleNew(path):
+    # Assuming loadSample uses pandas to read the CSV file
+    # Adjust the delimiter and header options as needed
+    _, file_extension = os.path.splitext(path)
+    match file_extension:
+       case '.csv':
+        sample = pd.read_csv(path)
+        # samples = sample.to_numpy()
+        samples = np.array(sample)
+       case '.parquet':
+        sample = pd.read_parquet(path, engine='auto')
+        samples = [y for x, y in sample.groupby('specimen')]
+        samples = np.array(list(map(lambda x: x.to_numpy(), samples)))
+    headers = np.array(sample.columns.values.tolist())
+    samples = samples.reshape(samplesPerFile,sampleShape[0],sampleShape[1],-1)
+
+    # Find indeces of input features 
+    featureIdx = []
+    for name in xNames:
+      featureIdx += [np.where(headers == name)[0][0]]
+
+    # Find indeces of ground truth features 
+    gtIdx = []
+    for name in yNames:
+      gtIdx += [np.where(headers == name)[0][0]]
+
+    
+    X = samples[:,:,:,featureIdx] # Input features
+    Y = samples[:,:,:,gtIdx] # Labels
+    X = np.asarray(X).astype('float32')
+    Y = np.asarray(Y).astype('float32')
+    ds = tf.data.Dataset.from_tensor_slices((X, Y))
+    
+
+    # samples = samples.reshape(samples.shape[0],sampleShape[0],sampleShape[1],-1)
+    
+    if "coordinates" in headers: 
+      coordIdx = np.where(headers == "coordinates")
+      # This part only needed to export grid for plotting
+      # if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+      #   coords = formatCoords(values,coordIdx)
+      #   values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+
+      headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
+    return headers, ds
 
 
+def load_all_samples(trainDat_path, numSamples):
+    files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
+
+    def process_file(filepath):
+        headers, values = loadSampleNew(filepath)
+        return headers, values
+
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_file, file): file for file in files}
+        for i, future in enumerate(as_completed(futures)):
+            if i == 0:
+               headers, samples = future.result()
+            else:
+               addSamp = future.result()[1]
+               samples = samples.concatenate(addSamp)
+            
+            
+            # if i == 0:
+            #     headers_list = headers  # Use headers from the first file
+            #     samples_list = result
+            #     # samples_list = tf.data.experimental.from_list(result)
+            # else:
+            #     # tmp = tf.data.experimental.from_list(result)
+            #     # tmp = result
+            #   samples_list = np.append(samples_list,result,axis = 0)
+            print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples/samplesPerFile))
+
+    # samples_array = tf.data.experimental.from_list(samples_list)
+    # samples_array = np.array(samples_list)
+    return headers, samples
 #####################################################################
 # Data import, normalisation, and reshaping
 #####################################################################
 
 # New method
 headers, samples = load_all_samples(trainDat_path, numSamples)
+
+
+samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
+train_ds = samples.take(train_length)
+remaining = samples.skip(train_length)
+val_ds = remaining.take(valSize)
+test_ds = remaining.skip(valSize)
+
+# Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
+train_ds_eval = train_ds.batch(batchSize)
+val_ds_eval = val_ds.batch(batchSize)
+test_ds_eval = test_ds.batch(batchSize)
+
+X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+y_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+y_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+    
+
+
+# Define mean and variance for normalization based only on training set
+feature_ds = train_ds.take(normalizerLength).map(lambda x, y: x) 
+normalizer = tf.keras.layers.Normalization()
+normalizer.adapt(feature_ds)
+# print(samples_array.shape)
+
+# Training preprocessing
+train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
+train_ds = train_ds.shuffle(buffer_size = len(train_ds)) # Shuffle for random order
+
+
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=0):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
+
+if params['dsAugmentation'] == 1:
+  # train_ds = train_ds.map(
+  #   lambda x, y: (augmentDs(x, training=True),augmentDs(y, training=True))) # Apply augmentations to increase the dataset size
+  train_ds = train_ds.map(Augment())
+train_ds = train_ds.batch(batchSize) # Batch
+
+train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
+# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
+#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
+train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+
+# Validation preprocessing
+val_ds = val_ds.cache() # cache dataset for it to be used over iterations
+val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+
+# Test preprocessing
+test_ds = test_ds.cache() # cache dataset for it to be used over iterations
+test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Old method
 # for i,file in enumerate(os.listdir(trainDat_path)):
@@ -408,9 +574,9 @@ headers, samples = load_all_samples(trainDat_path, numSamples)
 #         samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
 
 # Non-scaled
-samples_NonScaled = samples
-# Reshape sample variable to have shape (samples, row, column, features)
-samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
+# samples_NonScaled = samples
+# # Reshape sample variable to have shape (samples, row, column, features)
+# samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
 
 #####################################################################
 # ML training Settings and dataset preprocessing
@@ -421,74 +587,74 @@ samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.sha
 # ['label' 'x_coord' 'y_coord' 'e11' 'e22' 'e12' 'S11' 'S22' 'S12' 'SMises' 'FI' 'E11' 'E22' 'E12']
 
 # Find indeces of input features 
-featureIdx = []
-for name in xNames:
-   featureIdx += [np.where(headers == name)[0][0]]
+# featureIdx = []
+# for name in xNames:
+#    featureIdx += [np.where(headers == name)[0][0]]
 
-# Find indeces of labels
-gtIdx = []
-for name in yNames:
-   gtIdx += [np.where(headers == name)[0][0]]
+# # Find indeces of labels
+# gtIdx = []
+# for name in yNames:
+#    gtIdx += [np.where(headers == name)[0][0]]
    
-X = samples2D[:,:,:,featureIdx]  # Input features
+# X = samples2D[:,:,:,featureIdx]  # Input features
 
-Y = samples2D[:,:,:,gtIdx] # Labels
+# Y = samples2D[:,:,:,gtIdx] # Labels
 
-# Split data into training and validation sets
-X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(X, Y, train_size=trainValRatio, shuffle = True)
-X_trainShape = X_train.shape
-X_valShape = X_val.shape
-y_trainShape = y_train.shape
-y_valShape = y_val.shape
+# # Split data into training and validation sets
+# X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(X, Y, train_size=trainValRatio, shuffle = True)
+# X_trainShape = X_train.shape
+# X_valShape = X_val.shape
+# y_trainShape = y_train.shape
+# y_valShape = y_val.shape
 
-# Standardisation/normalisation scaling
-if params['standardisation'] == 'MinMax': # Normalistaion
-    Xscaler = preprocessing.MinMaxScaler() # Do a scaler for the in and outputs separately (to be able to inversely standardise predictions)
-    Yscaler = preprocessing.MinMaxScaler() # Note: these shoud be fit to the training data and applied without fitting to the validation data to avoid data leakage
-elif params['standardisation'] == 'Standard': # Standardisation
-    Xscaler = preprocessing.StandardScaler() # Default is scale by mean and divide by std
-    Yscaler = preprocessing.StandardScaler()
-elif params['standardisation'] == 0:
-   print('Warning: no scaling of data applied')
+# # Standardisation/normalisation scaling
+# if params['standardisation'] == 'MinMax': # Normalistaion
+#     Xscaler = preprocessing.MinMaxScaler() # Do a scaler for the in and outputs separately (to be able to inversely standardise predictions)
+#     Yscaler = preprocessing.MinMaxScaler() # Note: these shoud be fit to the training data and applied without fitting to the validation data to avoid data leakage
+# elif params['standardisation'] == 'Standard': # Standardisation
+#     Xscaler = preprocessing.StandardScaler() # Default is scale by mean and divide by std
+#     Yscaler = preprocessing.StandardScaler()
+# elif params['standardisation'] == 0:
+#    print('Warning: no scaling of data applied')
 
-if params['standardisation'] != 0:
-    # Fit the scaler
-    Xscaler.fit(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1)) # Scaler only takes input of shape (data,features)
-    # Transform training data
-    X_train = Xscaler.transform(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1))
-    X_train = X_train.reshape(X_trainShape) # reshape to 2D samples
-    # Transform validation data
-    X_val = Xscaler.transform(X_val.reshape(X_val.shape[0]*X_val.shape[1]*X_val.shape[2],-1))
-    X_val = X_val.reshape(X_valShape)
+# if params['standardisation'] != 0:
+#     # Fit the scaler
+#     Xscaler.fit(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1)) # Scaler only takes input of shape (data,features)
+#     # Transform training data
+#     X_train = Xscaler.transform(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1))
+#     X_train = X_train.reshape(X_trainShape) # reshape to 2D samples
+#     # Transform validation data
+#     X_val = Xscaler.transform(X_val.reshape(X_val.shape[0]*X_val.shape[1]*X_val.shape[2],-1))
+#     X_val = X_val.reshape(X_valShape)
 
-    Yscaler.fit(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-    y_train = Yscaler.transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-    y_train = y_train.reshape(y_trainShape) # reshape to 2D samples
-    y_val = Yscaler.transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-    y_val = y_val.reshape(y_valShape)
+#     Yscaler.fit(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#     y_train = Yscaler.transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#     y_train = y_train.reshape(y_trainShape) # reshape to 2D samples
+#     y_val = Yscaler.transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
+#     y_val = y_val.reshape(y_valShape)
 
-# Create tensor datasets
-train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
-val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
+# # Create tensor datasets
+# train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
+# val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
 
-# Training dataset preprocessing
-train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
-train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
-train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
-if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the size of the dataset
-   train_ds = train_ds.map(lambda x,y: augmentImage(x,y)) # Here x and y are input images and ground truth
-train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+# # Training dataset preprocessing
+# train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
+# train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
+# train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
+# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the size of the dataset
+#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y)) # Here x and y are input images and ground truth
+# train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Validation dataset preprocessing
-val_ds = val_ds.cache() # cache dataset for it to be used over iterations
-val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
-val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+# # Validation dataset preprocessing
+# val_ds = val_ds.cache() # cache dataset for it to be used over iterations
+# val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+# val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Get shapes for later use
-train_in_shape = X_train.shape
-val_in_shape = X_val.shape
-train_out_shape = y_train.shape
-val_out_shape = y_val.shape
+# train_in_shape = X_train.shape
+# val_in_shape = X_val.shape
+# train_out_shape = y_train.shape
+# val_out_shape = y_val.shape
 
 
 #####################################################################
@@ -525,8 +691,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   # activation function, and regularizer. After each convolutional layer there may be a batch-
   # normalization layer, a max pooling layer, and a dropout layer. The number of convolutional layers
   # is given in the sweep definition
-  input = tf.keras.layers.Input(shape=inputShape) # Shape (55, 20, 3) or (height, width, features) in general
-  x = input
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  x = normalizer(input)
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
@@ -643,52 +809,52 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   output = x
 
   model = tf.keras.Model(inputs=input, outputs=output) # Create model
+  return model
+def SSIM_metric(y_true, y_pred):
+  y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
+    
+  return tf.reduce_mean(tf.image.ssim(
+  img1 = y_true,
+  img2 = y_pred,
+  max_val = 1,
+  filter_size=winKernel,
+  filter_sigma=1.5,
+  k1=0.01,
+  k2=0.03,
+  return_index_map=False
+  )   )
 
-  # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
-  lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=params['initial_lr'],
-    decay_steps=steps_per_epoch*epochs,
-    decay_rate=params['lr_decay_rate'])
+# Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+  initial_learning_rate=params['initial_lr'],
+  decay_steps=steps_per_epoch*epochs,
+  decay_rate=params['lr_decay_rate'])
 
-  # Custom loss function which attributes more importance to higher values of failure index
-  d_loss = 1 # Parameter to alter the importance of higher y_true values
-  def custom_loss(y_true,y_pred):
-    SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),d_loss))))
-    loss = tf.reduce_mean(loss)
-    return loss
+def custom_loss(y_true,y_pred):
+  SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+  loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
+  loss = tf.reduce_mean(loss)
+  return loss
   
 #   Loss functions can be swept
-  if params['loss'] == 'MSE':
-    lossfunc = tf.keras.losses.MeanSquaredError()
-  elif params['loss'] == 'MAE':
-    lossfunc = tf.keras.losses.MeanAbsoluteError()
-  elif params['loss'] == 'Custom':
-    lossfunc = custom_loss
+if params['loss'] == 'MSE':
+  lossfunc = tf.keras.losses.MeanSquaredError()
+elif params['loss'] == 'MAE':
+  lossfunc = tf.keras.losses.MeanAbsoluteError()
+elif params['loss'] == 'Custom':
+  lossfunc = custom_loss
 
-  # Compile model with the optimizer in the sweep definition
-  if params['optimizer'] == 'Adadelta':
-     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error'])
-  elif params['optimizer'] == 'Nadam':
-     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error'])
-  else:
-     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error'])
 
-  return model
 
 #####################################################################
 # Training callbacks
 #####################################################################
 
 # Checkpoints to allow saving best model at various points
-checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn=args.jobname, num = args.parallel)
-checkpoint_dir = os.path.dirname(checkpoint_path)
+checkpoint_path = 'epoch-{epoch:02d}.weights.h5'
+checkpoint_dir = 'training_checkpoints_{jn}_{num}'.format(jn=args.jobname, num = args.parallel)
+cpLoadName = 'model.weights.h5' # The name of the checkpoint with the best weights at the end of training
+
 
 try:
   os.mkdir(checkpoint_dir) # Make checkpoint directory if it doesn't already exist
@@ -696,11 +862,48 @@ except:
   pass # Could be coded better but we don't want the sweep to fail due to issues on the HPC with mkdir
 
 # Save best weights to checkpoint based on only validation loss
-cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+
+cp_savepath = os.path.join(checkpoint_dir,checkpoint_path)
+
+# Save best weights to checkpoint
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=cp_savepath,
                                                  save_weights_only=True,
                                                  save_best_only = True,
                                                  monitor = 'val_loss',
                                                  verbose=1)
+
+
+class cp_delete_callback(tf.keras.callbacks.Callback):
+  def __init__(self, checkpoint_dir, cpLoadName, nCp = 1):
+    super().__init__()
+    self.checkpoint_dir = checkpoint_dir # directory of checkpoints
+    self.nCp = nCp # number of checkpoints to keep
+    self.cpLoadName = cpLoadName
+
+  def on_epoch_end(self, epoch, logs=None): # Delete the checkpoints before the best weights
+    if not len(os.listdir(self.checkpoint_dir)) == 0:
+      cps = os.listdir(self.checkpoint_dir)
+      for file in cps[:-1]:
+        os.remove(os.path.join(self.checkpoint_dir,file))
+
+  def on_train_end(self, logs=None): # Rename the best checkpoint to allow easy loading
+    bestCp = os.listdir(self.checkpoint_dir)[-1]
+    oldPath = os.path.join(self.checkpoint_dir,bestCp)
+    newPath = os.path.join(self.checkpoint_dir,self.cpLoadName)
+    os.rename(oldPath, newPath)
+     
+class timecallback(tf.keras.callbacks.Callback):
+    def __init__(self):
+        self.times = []
+        # use this value as reference to calculate cummulative time taken
+        self.timetaken = tf.timestamp()
+    def on_epoch_end(self,epoch,logs = {}):
+        self.times.append(tf.timestamp() - self.timetaken) 
+        print(self.times)
+    def get_epoch_times(self):
+        # Return the list of epoch times as a numpy array
+        return np.array(self.times)
+
 
 # Early stopping callback which monitors improvements and stops training if
 # it stagnates.
@@ -722,7 +925,27 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
 tf.keras.backend.clear_session() # Clear the state and frees up memory
 
 # CNN Model creation
-modelCNN = TBDCNet_modelCNN(inputShape = train_in_shape[1:], outputShape = train_out_shape[1:], params = params)
+CNNModel = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+
+def preModel_compile(CNNModel):
+  # Compile model with the optimizer in the sweep definition
+  if params['optimizer'] == 'Adadelta':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  elif params['optimizer'] == 'Nadam':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  else:
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  return CNNModel
+
+CNNModel = preModel_compile(CNNModel)
+
+CNNModel.summary()
 modelCNNname = 'CNNModel1'
 
 #####################################################################
@@ -730,13 +953,17 @@ modelCNNname = 'CNNModel1'
 #####################################################################
 
 # Fit model to Failure index
-modelCNN_history = modelCNN.fit(train_ds,
+time_callback_ins = timecallback()
+modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
                                 steps_per_epoch=steps_per_epoch,
                                 validation_data=val_ds,
                                 validation_steps = validation_steps,
-                                callbacks=[early_stopping_monitor, cp_callback]
+                                callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
                                 )
+
+# Get the recorded epoch times after training is complete
+epoch_times = {'trainTime':time_callback_ins.get_epoch_times().tolist()}
 
 
 #####################################################################
@@ -744,72 +971,127 @@ modelCNN_history = modelCNN.fit(train_ds,
 #####################################################################
 
 trainingHist = modelCNN_history.history # save training history
-modelCNN.load_weights(checkpoint_path) # load best model weights
+trainingHist.update(epoch_times) # Add training time to history
 
-predCNN = modelCNN.predict(X_train) # Make prediction
-predCNN_val = modelCNN.predict(X_val) # Prediction of only validation data
-predCNNShape = predCNN.shape
-predCNN_valShape = predCNN_val.shape
+CNNModel.load_weights(os.path.join(checkpoint_dir,cpLoadName)) # load best model weights
 
-# Inverse scaling
-if params['standardisation'] == 0:
-   predCNN_invStandard = predCNN
-   predCNN_val_invStandard = predCNN_val
-   ground_truth_invStandard = y_train
-   ground_truth_val_invStandard = y_val
-else:
-   predCNN_invStandard = Yscaler.inverse_transform(predCNN.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-   predCNN_invStandard = predCNN_invStandard.reshape(predCNNShape)
-   predCNN_val_invStandard = Yscaler.inverse_transform(predCNN_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-   predCNN_val_invStandard = predCNN_val_invStandard.reshape(predCNN_valShape)
+# predCNN = modelCNN.predict(X_train) # Make prediction
+# predCNN_val = modelCNN.predict(X_val) # Prediction of only validation data
+# predCNNShape = predCNN.shape
+# predCNN_valShape = predCNN_val.shape
+
+# # Inverse scaling
+# if params['standardisation'] == 0:
+#    predCNN_invStandard = predCNN
+#    predCNN_val_invStandard = predCNN_val
+#    ground_truth_invStandard = y_train
+#    ground_truth_val_invStandard = y_val
+# else:
+#    predCNN_invStandard = Yscaler.inverse_transform(predCNN.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#    predCNN_invStandard = predCNN_invStandard.reshape(predCNNShape)
+#    predCNN_val_invStandard = Yscaler.inverse_transform(predCNN_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
+#    predCNN_val_invStandard = predCNN_val_invStandard.reshape(predCNN_valShape)
    
-   ground_truth_invStandard =  Yscaler.inverse_transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-   ground_truth_invStandard = ground_truth_invStandard.reshape(y_trainShape)
-   ground_truth_val_invStandard = Yscaler.inverse_transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-   ground_truth_val_invStandard = ground_truth_val_invStandard.reshape(y_valShape)
+#    ground_truth_invStandard =  Yscaler.inverse_transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#    ground_truth_invStandard = ground_truth_invStandard.reshape(y_trainShape)
+#    ground_truth_val_invStandard = Yscaler.inverse_transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
+#    ground_truth_val_invStandard = ground_truth_val_invStandard.reshape(y_valShape)
 
-# RMSE calculation for both training and validation
-RMSE = tf.keras.metrics.RootMeanSquaredError()
-RMSE.update_state(ground_truth_invStandard,predCNN_invStandard)
-print('RMSE for training set = ' + str(RMSE.result().numpy()))
-if ground_truth_val_invStandard is not None:
-    RMSE_val = tf.keras.metrics.RootMeanSquaredError()
-    RMSE_val.update_state(ground_truth_val_invStandard,predCNN_val_invStandard)
-    print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
+
+train_results = CNNModel.evaluate(
+    x=train_ds_eval,
+    y=None,
+    batch_size=None,
+    verbose='auto',
+    sample_weight=None,
+    steps=None,
+    callbacks=None,
+    return_dict=True
+)
+
+train_results = pd.DataFrame.from_dict(train_results, orient='index',
+                       columns=['train']).T
+
+val_results = CNNModel.evaluate(
+    x=val_ds_eval,
+    y=None,
+    batch_size=None,
+    verbose='auto',
+    sample_weight=None,
+    steps=None,
+    callbacks=None,
+    return_dict=True
+)
+val_results = pd.DataFrame.from_dict(val_results, orient='index',
+                       columns=['val']).T
+
+
+test_results = CNNModel.evaluate(
+    x=test_ds_eval,
+    y=None,
+    batch_size=None,
+    verbose='auto',
+    sample_weight=None,
+    steps=None,
+    callbacks=None,
+    return_dict=True
+)
+
+test_results = pd.DataFrame.from_dict(test_results, orient='index',
+                       columns=['test']).T
+
+results = pd.concat([train_results, val_results, test_results])
+# RMSE = tf.keras.metrics.RootMeanSquaredError()
+# RMSE.update_state(ground_truth_invStandard,predCNN_invStandard)
+# print('RMSE for training set = ' + str(RMSE.result().numpy()))
+# if ground_truth_val_invStandard is not None:
+#     RMSE_val = tf.keras.metrics.RootMeanSquaredError()
+#     RMSE_val.update_state(ground_truth_val_invStandard,predCNN_val_invStandard)
+#     print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
 
 
 # Save outputs
-inputDat = np.zeros(samples2D.shape)
-for i in range(0,samples2D.shape[-1]): # Un-normalise all input features
-    inputDat[:,:,:,i] = samples2D[:,:,:,i]
 
 with open(histOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(trainingHist, f, indent=2)
 
-with open(predOutPath, 'w') as f: # Dump data to json file at specified path
-    json.dump(predCNN_invStandard.tolist(), f, indent=2)
-
-with open(predOutPath_val, 'w') as f: # Dump data to json file at specified path
-    json.dump(predCNN_val_invStandard.tolist(), f, indent=2)
-
-with open(gtOutPath, 'w') as f: # Dump data to json file at specified path
-    json.dump(ground_truth_invStandard.tolist(), f, indent=2)
-
-with open(gtOutPath_val, 'w') as f: # Dump data to json file at specified path
-    json.dump(ground_truth_val_invStandard.tolist(), f, indent=2)
-
 with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(params.to_json(), f, indent=2)
 
-with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
-    json.dump(inputDat.tolist(), f, indent=2)
+with open(resultpath, 'w') as f: # Dump data to json file at specified path
+    json.dump(results.to_json(), f, indent=2)
 
-with open(RMSEOutPath, 'w') as f: # Dump data to json file at specified path
-    json.dump(RMSE.result().numpy().tolist(), f, indent=2)
+# inputDat = np.zeros(samples2D.shape)
+# for i in range(0,samples2D.shape[-1]): # Un-normalise all input features
+#     inputDat[:,:,:,i] = samples2D[:,:,:,i]
 
-with open(RMSEOutPath_val, 'w') as f: # Dump data to json file at specified path
-    json.dump(RMSE_val.result().numpy().tolist(), f, indent=2)
+# with open(histOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(trainingHist, f, indent=2)
+
+# with open(predOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(predCNN_invStandard.tolist(), f, indent=2)
+
+# with open(predOutPath_val, 'w') as f: # Dump data to json file at specified path
+#     json.dump(predCNN_val_invStandard.tolist(), f, indent=2)
+
+# with open(gtOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(ground_truth_invStandard.tolist(), f, indent=2)
+
+# with open(gtOutPath_val, 'w') as f: # Dump data to json file at specified path
+#     json.dump(ground_truth_val_invStandard.tolist(), f, indent=2)
+
+# with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(params.to_json(), f, indent=2)
+
+# with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(inputDat.tolist(), f, indent=2)
+
+# with open(RMSEOutPath, 'w') as f: # Dump data to json file at specified path
+#     json.dump(RMSE.result().numpy().tolist(), f, indent=2)
+
+# with open(RMSEOutPath_val, 'w') as f: # Dump data to json file at specified path
+#     json.dump(RMSE_val.result().numpy().tolist(), f, indent=2)
 
 
 # Save the model
-modelCNN.save(modelOutPath)
+CNNModel.save(modelOutPath)

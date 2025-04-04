@@ -329,8 +329,28 @@ normalizer.adapt(feature_ds)
 
 # Training preprocessing
 train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
-train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
+train_ds = train_ds.shuffle(buffer_size = len(train_ds)) # Shuffle for random order
+
+
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=0):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
+
+if params['dsAugmentation'] == 1:
+  # train_ds = train_ds.map(
+  #   lambda x, y: (augmentDs(x, training=True),augmentDs(y, training=True))) # Apply augmentations to increase the dataset size
+  train_ds = train_ds.map(Augment())
+train_ds = train_ds.batch(batchSize) # Batch
 train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
+# 04.04.2025 Thids augmentation method does not work as augmentations are only applied to features and not labels
 # if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the size of the dataset
 #    train_ds = train_ds.map(lambda x,y: augmentImage(x,y)) # Here x and y are input images and ground truth
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
@@ -385,8 +405,9 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
-  if params['dsAugmentation'] == 1:
-    x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
+  # This augmentation method only applies to the features and not the labels
+  # if params['dsAugmentation'] == 1:
+  #   x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
 
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)

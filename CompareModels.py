@@ -536,6 +536,7 @@ for i in sweepIdx.index:
     plotParams = sweepIdx.apply(lambda row: row[row == 1].index.tolist(), axis=1)[i] # Parameters of plotted models
     sweepnums = np.fromstring(sweepIdx['sweepIdx'][i],dtype=int, sep=',') # Which models in the sweep to plot in this figure
     sweepnums = np.hstack((baselineIdx,sweepnums))
+    print(sweepnums)
     sweepPlot(sweep=sweepnums, paramVariables = plotParams, figname = sweepIdx['sweepName'][i]) # Plot
 
 

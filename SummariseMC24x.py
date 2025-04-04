@@ -27,7 +27,12 @@ import argparse
 # %% find results and training history files and load these + 
 
 # jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241213_MC24x_Baseline'
-jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241223_AltModels_Baseline'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241223_AltModels_Baseline'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250311_LFC18_CrossValidation_PreOpti'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_LFC18_CrossValidation_PostOpti'
+jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_MC24_CrossValidation_PreOpti'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_MC24_CrossValidation_PostOpti'
+crossVal = True # Cross validation or not
 trainEpochs = 1000
 
 
@@ -54,7 +59,10 @@ results_files = np.array(results_files).reshape(repeats,-1)
 history_files = np.array(history_files).reshape(repeats,-1)
 nModels = results_files.shape[-1]
 
-results = np.empty((repeats, nModels, 3, 4)) # Shape is (repeat, model number, [train val test], [loss, MAE, MSE, SSIM])
+if crossVal:
+    results = np.empty((repeats, nModels, 2, 4))  # Shape is (repeat, model number, [train val], [loss, MAE, MSE, SSIM])
+else:
+    results = np.empty((repeats, nModels, 3, 4)) # Shape is (repeat, model number, [train val test], [loss, MAE, MSE, SSIM])
 histories = np.empty((repeats, nModels, trainEpochs, 9)) # ['loss', 'mean_absolute_error', 'mean_squared_error', 'SSIM_metric','val_loss', 'val_mean_absolute_error', 'val_mean_squared_error','val_SSIM_metric', 'trainTime']
 for r in range(results.shape[0]): # repeats
     for m in range(results.shape[1]): # models
@@ -110,7 +118,10 @@ def formatResults(results, resCols):
     p = results.shape[-1] # parameters
     r = results.shape[0] # repeat
     m = results.shape[1] # models
-    d = ['train','val','test'] # data
+    if crossVal:
+        d = ['train','val']
+    else:
+        d = ['train','val','test'] # data
     reshaped_array = results.reshape(-1, p)
     repeat_ids = np.repeat(np.arange(r), m * len(d))
     model_ids = np.tile(np.repeat(np.arange(stop = m), len(d)), r)
@@ -229,9 +240,11 @@ def plotResults(resDf, idx):
 histDf = formatHistory(histories,histCols = histCols)
 resDf = formatResults(results,resCols = resCols)
 # %% Make plots
-idx = [1,6] # Activation func
+idx = [1,2] # Activation func
+# idx = list(range(1, 11))
 
 plotHist(histDf, idx)
 plotResults(resDf, idx)
 
 plt.show()
+# %%

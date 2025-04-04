@@ -6,13 +6,8 @@ import random
 import time
 import math
 import datetime
-import shutil
 import json
-import scipy
 import tensorflow as tf
-import sklearn
-from sklearn import preprocessing
-import sklearn.model_selection
 from sklearn.preprocessing import StandardScaler
 
 import numpy as np
@@ -22,6 +17,10 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import seaborn as sns
+
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
+
 os.environ["TF_USE_LEGACY_KERAS"]="1" # Needed to import models saved before keras 3.0 release
 import tf_keras as keras # Legacy keras version which is equal to the one on the HPC
 
@@ -32,6 +31,8 @@ sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[1]
 jobname = 'TLTEST'
 parallel = 1
+normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
+
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
 histOutName = 'trainHist_{jn}_{num}.json'.format(jn=jobname, num = parallel) # Training history file
 histOutPath = os.path.join('dataoutTLTEST',histOutName)
@@ -60,7 +61,8 @@ if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   sampleShape = [55,20]
   xNames = ['E11','E22','E12'] # Names of input features in input csv
   trainDat_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # Path for training data samples
-  
+  samplesPerFile = 1
+  winKernel = 5
 elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
   trainDat_name = 'MatLabModel2024' 
   sampleShape = [60,20]
@@ -71,7 +73,8 @@ elif params['Dataset'] == 'MC24': # MECOMPOSITES MODEL FROM 2024 (100 samples)
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
   trainDat_name = 'MatLabModel2024_200' 
   sampleShape = [60,20]
@@ -82,7 +85,8 @@ elif params['Dataset'] == 'MC24_200': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
   trainDat_name = 'MatLabModel2024_500' 
   sampleShape = [60,20]
@@ -93,7 +97,8 @@ elif params['Dataset'] == 'MC24_500': # MECOMPOSITES MODEL FROM 2024 (1000 sampl
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
-
+  samplesPerFile = 1
+  winKernel = 7
 elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samples)
   trainDat_name = 'MatLabModel2024_1000' 
   sampleShape = [60,20]
@@ -104,6 +109,31 @@ elif params['Dataset'] == 'MC24_1000': # MECOMPOSITES MODEL FROM 2024 (1000 samp
     xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
   elif params['MC24_Features'] == 'All':
      xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 1
+  winKernel = 7
+
+elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224 resolution)
+  trainDat_name = 'MatLabModel2024_224_4kSamples' 
+  sampleShape = [224,224]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 40
+  winKernel = 17
+
+elif params['Dataset'] == 'MC24_1000VfConst': # MECOMPOSITES MODEL FROM 2024 (1000 samples where Vf is kept constant for transfer learning study)
+  trainDat_name = 'MatLabModel2024_1000SamplesVfConstant' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+
 
 elif params['Dataset'] == 'MC24_10000': # MECOMPOSITES MODEL FROM 2024 (10,000 samples)
   trainDat_name = 'MatLabModel2024_10000' 
@@ -129,14 +159,16 @@ elif params['Dataset'] == 'MC24_100000': # MECOMPOSITES MODEL FROM 2024 (100,000
 
 
 yNames = ['FI'] # Names of ground truth features in input csv
-numSamples = len(os.listdir(trainDat_path)) # number of samples is number of files in datain
+numSamples = len(os.listdir(trainDat_path))*samplesPerFile # number of samples is number of files in datain
 batchSize = params['batchSize'] # Batch size for training
-trainValRatio = params['trainValRatio'] # Training and validation data split ratio
-train_length = round(numSamples * trainValRatio) # Number of training samples 
+valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
+testSize = math.floor(params['testSize']*numSamples)
+trainValRatio = 1-params['valSize'] # For transfer learning study take no test set
+train_length = numSamples-valSize-testSize # Number of training samples 
 epochs = params['Epochs'] # Max epochs for training
 # epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
-validation_steps = math.ceil((numSamples-train_length) / batchSize)
+validation_steps = valSize // batchSize
 
 # For reproducible results set a seed
 seed = 0
@@ -273,25 +305,52 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 def loadSampleNew(path):
     # Assuming loadSample uses pandas to read the CSV file
     # Adjust the delimiter and header options as needed
-    sample = pd.read_csv(path)
-    headers = sample.columns.values.tolist()
-    values = np.array(sample)
+    _, file_extension = os.path.splitext(path)
+    match file_extension:
+       case '.csv':
+        sample = pd.read_csv(path)
+        # samples = sample.to_numpy()
+        samples = np.array(sample)
+       case '.parquet':
+        sample = pd.read_parquet(path, engine='auto')
+        samples = [y for x, y in sample.groupby('specimen')]
+        samples = np.array(list(map(lambda x: x.to_numpy(), samples)))
+    headers = np.array(sample.columns.values.tolist())
+    samples = samples.reshape(samplesPerFile,sampleShape[0],sampleShape[1],-1)
 
+    # Find indeces of input features 
+    featureIdx = []
+    for name in xNames:
+      featureIdx += [np.where(headers == name)[0][0]]
+
+    # Find indeces of ground truth features 
+    gtIdx = []
+    for name in yNames:
+      gtIdx += [np.where(headers == name)[0][0]]
+
+    
+    X = samples[:,:,:,featureIdx] # Input features
+    Y = samples[:,:,:,gtIdx] # Labels
+    X = np.asarray(X).astype('float32')
+    Y = np.asarray(Y).astype('float32')
+    ds = tf.data.Dataset.from_tensor_slices((X, Y))
+    
+
+    # samples = samples.reshape(samples.shape[0],sampleShape[0],sampleShape[1],-1)
+    
     if "coordinates" in headers: 
-      coordIdx = headers.index("coordinates")
-      if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
-        coords = formatCoords(values,coordIdx)
-        values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
+      coordIdx = np.where(headers == "coordinates")
+      # This part only needed to export grid for plotting
+      # if '[' in values[0,1]: # Some coordinates will be formatted with brackets from abaqus export
+      #   coords = formatCoords(values,coordIdx)
+      #   values = np.column_stack((values[:,0],coords,values[:,2:])).astype(float) # Create a new values vector which contains the coordinates
 
       headers = np.concatenate(([[headers[0],'x_coord','y_coord'],headers[2:]])) # rectify the headers to include x and y coordinates separately
-    headers = np.array(headers)
-    return headers, values
+    return headers, ds
 
 
 def load_all_samples(trainDat_path, numSamples):
     files = [os.path.join(trainDat_path, file) for file in os.listdir(trainDat_path)]
-    headers_list = []
-    samples_list = []
 
     def process_file(filepath):
         headers, values = loadSampleNew(filepath)
@@ -300,16 +359,94 @@ def load_all_samples(trainDat_path, numSamples):
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(process_file, file): file for file in files}
         for i, future in enumerate(as_completed(futures)):
-            headers, result = future.result()
             if i == 0:
-                headers_list = headers  # Use headers from the first file
-            samples_list.append(result)
-            print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples))
+               headers, samples = future.result()
+            else:
+               addSamp = future.result()[1]
+               samples = samples.concatenate(addSamp)
+            
+            
+            # if i == 0:
+            #     headers_list = headers  # Use headers from the first file
+            #     samples_list = result
+            #     # samples_list = tf.data.experimental.from_list(result)
+            # else:
+            #     # tmp = tf.data.experimental.from_list(result)
+            #     # tmp = result
+            #   samples_list = np.append(samples_list,result,axis = 0)
+            print('Now loading file number {num} out of {total}'.format(num=i+1, total=numSamples/samplesPerFile))
 
-    samples_array = np.array(samples_list)
-    return headers_list, samples_array
+    # samples_array = tf.data.experimental.from_list(samples_list)
+    # samples_array = np.array(samples_list)
+    return headers, samples
 
 headers, samples = load_all_samples(trainDat_path, numSamples)
+
+
+samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
+train_ds = samples.take(train_length)
+remaining = samples.skip(train_length)
+val_ds = remaining.take(valSize)
+test_ds = remaining.skip(valSize)
+
+# Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
+train_ds_eval = train_ds.batch(batchSize)
+val_ds_eval = val_ds.batch(batchSize)
+test_ds_eval = test_ds.batch(batchSize)
+
+X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+y_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+y_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+    
+
+
+# Define mean and variance for normalization based only on training set
+feature_ds = train_ds.take(normalizerLength).map(lambda x, y: x) 
+normalizer = tf.keras.layers.Normalization()
+normalizer.adapt(feature_ds)
+# print(samples_array.shape)
+
+# Training preprocessing
+train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
+train_ds = train_ds.shuffle(buffer_size = len(train_ds)) # Shuffle for random order
+
+
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=0):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
+
+if params['dsAugmentation'] == 1:
+  # train_ds = train_ds.map(
+  #   lambda x, y: (augmentDs(x, training=True),augmentDs(y, training=True))) # Apply augmentations to increase the dataset size
+  train_ds = train_ds.map(Augment())
+train_ds = train_ds.batch(batchSize) # Batch
+
+train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
+# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
+#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
+train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+
+# Validation preprocessing
+val_ds = val_ds.cache() # cache dataset for it to be used over iterations
+val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+
+# Test preprocessing
+test_ds = test_ds.cache() # cache dataset for it to be used over iterations
+test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+
 # print(samples_array.shape)
 
 
@@ -323,80 +460,80 @@ headers, samples = load_all_samples(trainDat_path, numSamples)
 #     else:
 #         addSamp = loadSample(filepath)[1]
 #         samples = np.concatenate((samples,addSamp.reshape(1, np.shape(addSamp)[0],np.shape(addSamp)[1])))
-samples_NonStandard = samples
-# samples, scaler = normalise(samples.reshape(samples.shape[0]*samples.shape[1],-1),params) # retain the scaler parameters such that inverse scaling can be done
-# means = scaler.mean_ # Will have 1 value for each feature in the data
-# std = np.sqrt(scaler.var_)
-# Reshape sample variable to have shape (samples, row, column, features)
-samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
+# samples_NonStandard = samples
+# # samples, scaler = normalise(samples.reshape(samples.shape[0]*samples.shape[1],-1),params) # retain the scaler parameters such that inverse scaling can be done
+# # means = scaler.mean_ # Will have 1 value for each feature in the data
+# # std = np.sqrt(scaler.var_)
+# # Reshape sample variable to have shape (samples, row, column, features)
+# samples2D = samples.reshape(numSamples,sampleShape[0],sampleShape[1],samples.shape[-1])
 
-# Find indeces of input features 
-featureIdx = []
-for name in xNames:
-   featureIdx += [np.where(headers == name)[0][0]]
+# # Find indeces of input features 
+# featureIdx = []
+# for name in xNames:
+#    featureIdx += [np.where(headers == name)[0][0]]
 
-# Find indeces of ground truth features 
-gtIdx = []
-for name in yNames:
-   gtIdx += [np.where(headers == name)[0][0]]
+# # Find indeces of ground truth features 
+# gtIdx = []
+# for name in yNames:
+#    gtIdx += [np.where(headers == name)[0][0]]
 
-X = samples2D[:,:,:,featureIdx]  # Input features
+# X = samples2D[:,:,:,featureIdx]  # Input features
 
-Y = samples2D[:,:,:,gtIdx] # Labels
+# Y = samples2D[:,:,:,gtIdx] # Labels
 
-# The below are just used for validation and shape (TODO: replace validation method with tf tensors)
-X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(X, Y, train_size=trainValRatio, shuffle = True)
-X_trainShape = X_train.shape
-X_valShape = X_val.shape
-y_trainShape = y_train.shape
-y_valShape = y_val.shape
-
-
-
-# RESHAPE TO CONFORM WITH PRE-TRAINED MODELS
-# PADS WITH ZEROS TO BE SQUARE
+# # The below are just used for validation and shape (TODO: replace validation method with tf tensors)
+# X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(X, Y, train_size=trainValRatio, shuffle = True)
+# X_trainShape = X_train.shape
+# X_valShape = X_val.shape
+# y_trainShape = y_train.shape
+# y_valShape = y_val.shape
 
 
-# Standardisation/normalisation
-if params['standardisation'] == 'MinMax':
-    Xscaler = preprocessing.MinMaxScaler(feature_range=(0, 1)) # Do a scaler for the in and outputs separately (to be able to inversely standardise predictions)
-    Yscaler = preprocessing.MinMaxScaler(feature_range=(0, 1)) # Note: these shoud be fit to the training data and applied without fitting to the validation data to avoid data leakage
-elif params['standardisation'] == 'Standard':
-    Xscaler = preprocessing.StandardScaler() # Default is scale by mean and divide by std
-    Yscaler = preprocessing.StandardScaler()
-elif params['standardisation'] == 0:
-   print('Warning: no standardisation of data applied')
-if params['standardisation'] != 0:
-    Xscaler.fit(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1)) # Scaler only takes input of shape (data,features)
-    X_train = Xscaler.transform(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1))
-    X_train = X_train.reshape(X_trainShape) # reshape to 2D samples
-    X_val = Xscaler.transform(X_val.reshape(X_val.shape[0]*X_val.shape[1]*X_val.shape[2],-1))
-    X_val = X_val.reshape(X_valShape)
 
-    Yscaler.fit(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-    y_train = Yscaler.transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-    y_train = y_train.reshape(y_trainShape) # reshape to 2D samples
-    y_val = Yscaler.transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-    y_val = y_val.reshape(y_valShape)
+# # RESHAPE TO CONFORM WITH PRE-TRAINED MODELS
+# # PADS WITH ZEROS TO BE SQUARE
 
 
-X_train = tf.image.resize(
-    X_train,
-    (64,64),
-    method=tf.image.ResizeMethod.BILINEAR,
-    preserve_aspect_ratio=False,
-    antialias=False,
-    name=None
-)
+# # Standardisation/normalisation
+# if params['standardisation'] == 'MinMax':
+#     Xscaler = preprocessing.MinMaxScaler(feature_range=(0, 1)) # Do a scaler for the in and outputs separately (to be able to inversely standardise predictions)
+#     Yscaler = preprocessing.MinMaxScaler(feature_range=(0, 1)) # Note: these shoud be fit to the training data and applied without fitting to the validation data to avoid data leakage
+# elif params['standardisation'] == 'Standard':
+#     Xscaler = preprocessing.StandardScaler() # Default is scale by mean and divide by std
+#     Yscaler = preprocessing.StandardScaler()
+# elif params['standardisation'] == 0:
+#    print('Warning: no standardisation of data applied')
+# if params['standardisation'] != 0:
+#     Xscaler.fit(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1)) # Scaler only takes input of shape (data,features)
+#     X_train = Xscaler.transform(X_train.reshape(X_train.shape[0]*X_train.shape[1]*X_train.shape[2],-1))
+#     X_train = X_train.reshape(X_trainShape) # reshape to 2D samples
+#     X_val = Xscaler.transform(X_val.reshape(X_val.shape[0]*X_val.shape[1]*X_val.shape[2],-1))
+#     X_val = X_val.reshape(X_valShape)
 
-X_val = tf.image.resize(
-    X_val,
-    (64,64),
-    method=tf.image.ResizeMethod.BILINEAR,
-    preserve_aspect_ratio=False,
-    antialias=False,
-    name=None
-)
+#     Yscaler.fit(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#     y_train = Yscaler.transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
+#     y_train = y_train.reshape(y_trainShape) # reshape to 2D samples
+#     y_val = Yscaler.transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
+#     y_val = y_val.reshape(y_valShape)
+
+
+# X_train = tf.image.resize(
+#     X_train,
+#     (64,64),
+#     method=tf.image.ResizeMethod.BILINEAR,
+#     preserve_aspect_ratio=False,
+#     antialias=False,
+#     name=None
+# )
+
+# X_val = tf.image.resize(
+#     X_val,
+#     (64,64),
+#     method=tf.image.ResizeMethod.BILINEAR,
+#     preserve_aspect_ratio=False,
+#     antialias=False,
+#     name=None
+# )
 
 
 # X_train = tf.image.resize(
@@ -459,30 +596,30 @@ X_val = tf.image.resize(
 # train_ds = ds.take(train_length)
 # val_ds = ds.skip(train_length)
 
-train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
-val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
+# train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)) 
+# val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)) 
 
 
 
 
 # Training preprocessing
-train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
-train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
-train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
-if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
-   train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
-train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+# train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
+# train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
+# train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
+# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
+#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
+# train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Validation preprocessing
-val_ds = val_ds.cache() # cache dataset for it to be used over iterations
-val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
-val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+# # Validation preprocessing
+# val_ds = val_ds.cache() # cache dataset for it to be used over iterations
+# val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+# val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Get shapes for later use
-train_in_shape = X_train.shape
-val_in_shape = X_val.shape
-train_out_shape = y_train.shape
-val_out_shape = y_val.shape
+# # Get shapes for later use
+# train_in_shape = X_train.shape
+# val_in_shape = X_val.shape
+# train_out_shape = y_train.shape
+# val_out_shape = y_val.shape
 
 
 
@@ -494,7 +631,7 @@ val_out_shape = y_val.shape
 #####################################################################
 
 tf.keras.backend.clear_session()
-inputShape = train_in_shape[1:]
+inputShape = X_trainShape[1:]
 
 # Instantiate base model
 
@@ -729,14 +866,14 @@ baseModel.trainable = False
 
 # %% model evaluation on training data
 model.evaluate(
-    x=X_train,
-    y=y_train,
+    x=train_ds_eval,
+    y=None,
     batch_size=None,
     verbose='auto',
     sample_weight=None,
     steps=None,
     callbacks=None,
-    return_dict=False,
+    return_dict=True
 )
 
 # %%

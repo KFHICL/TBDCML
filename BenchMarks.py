@@ -272,8 +272,26 @@ normalizer.adapt(feature_ds)
 
 # Training preprocessing
 train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
-train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
+train_ds = train_ds.shuffle(buffer_size = len(train_ds)) # Shuffle for random order
 
+
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=0):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
+
+if params['dsAugmentation'] == 1:
+  # train_ds = train_ds.map(
+  #   lambda x, y: (augmentDs(x, training=True),augmentDs(y, training=True))) # Apply augmentations to increase the dataset size
+  train_ds = train_ds.map(Augment())
+train_ds = train_ds.batch(batchSize) # Batch
 train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
 # if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
 #    train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
@@ -301,7 +319,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   Args
   ----------
-  inputShape: the 55x20x3 input image shape
+  inputShape: the length x width x features, input image shape
   outputShape: the prediction image shape (currently unused)
   params: The hyperparameters for the given sweep index
 
@@ -328,8 +346,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
-  if params['dsAugmentation'] == 1:
-    x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
+  # if params['dsAugmentation'] == 1:
+  #   x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
 
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
@@ -457,88 +475,88 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     output = x
 
   model = tf.keras.Model(inputs=input, outputs=output) # Create model
+  return model
+#   # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
+#   lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+#     initial_learning_rate=params['initial_lr'],
+#     decay_steps=steps_per_epoch*epochs,
+#     decay_rate=params['lr_decay_rate'])
 
-  # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
-  lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=params['initial_lr'],
-    decay_steps=steps_per_epoch*epochs,
-    decay_rate=params['lr_decay_rate'])
-
-  def custom_loss(y_true,y_pred):
-    SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
-    loss = tf.reduce_mean(loss)
-    return loss
+#   def custom_loss(y_true,y_pred):
+#     SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+#     loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
+#     loss = tf.reduce_mean(loss)
+#     return loss
   
-  def custom_loss5(y_true,y_pred):
-    SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),5))))
-    loss = tf.reduce_mean(loss)
-    return loss
+#   def custom_loss5(y_true,y_pred):
+#     SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+#     loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),5))))
+#     loss = tf.reduce_mean(loss)
+#     return loss
 
-  def peak_loss(y_true,y_pred):
-    peakVal = tf.reduce_max(y_true, keepdims=True)
-    cond = tf.equal(y_true, peakVal)
-    # peakLoc = tf.where(cond)
-    # peakLoc_1d = tf.squeeze(peakLoc)
-    errorGrid = tf.math.subtract(y_true,y_pred)
-    zeroGrid = tf.math.subtract(y_true,y_true) # Grid of zeros so we only get loss in peak location
-    # peakPred = y_pred[peakLoc_1d.numpy()[0]]
-    # peakPred = tf.slice(y_pred, peakLoc, [1,1])
-    loss = tf.where(cond, errorGrid, zeroGrid)
-    loss = tf.reduce_mean(loss)
+#   def peak_loss(y_true,y_pred):
+#     peakVal = tf.reduce_max(y_true, keepdims=True)
+#     cond = tf.equal(y_true, peakVal)
+#     # peakLoc = tf.where(cond)
+#     # peakLoc_1d = tf.squeeze(peakLoc)
+#     errorGrid = tf.math.subtract(y_true,y_pred)
+#     zeroGrid = tf.math.subtract(y_true,y_true) # Grid of zeros so we only get loss in peak location
+#     # peakPred = y_pred[peakLoc_1d.numpy()[0]]
+#     # peakPred = tf.slice(y_pred, peakLoc, [1,1])
+#     loss = tf.where(cond, errorGrid, zeroGrid)
+#     loss = tf.reduce_mean(loss)
 
-    # loss = peakPred-peakVal
-    return loss
+#     # loss = peakPred-peakVal
+#     return loss
 
 
-#   Loss functions can be swept
-  if params['loss'] == 'MSE':
-    lossfunc = tf.keras.losses.MeanSquaredError()
-  elif params['loss'] == 'MAE':
-    lossfunc = tf.keras.losses.MeanAbsoluteError()
-  elif params['loss'] == 'Custom':
-    lossfunc = custom_loss
-  elif params['loss'] == 'Peak':
-    lossfunc = peak_loss
-  elif params['loss'] == 'Custom5':
-    lossfunc = custom_loss5
+# #   Loss functions can be swept
+#   if params['loss'] == 'MSE':
+#     lossfunc = tf.keras.losses.MeanSquaredError()
+#   elif params['loss'] == 'MAE':
+#     lossfunc = tf.keras.losses.MeanAbsoluteError()
+#   elif params['loss'] == 'Custom':
+#     lossfunc = custom_loss
+#   elif params['loss'] == 'Peak':
+#     lossfunc = peak_loss
+#   elif params['loss'] == 'Custom5':
+#     lossfunc = custom_loss5
     
 
-  # Additional metrics to computes
-  def SSIM_metric(y_true, y_pred):
-    y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
-    # squared_difference = tf.keras.ops.square(y_true - y_pred)
-    # return tf.keras.ops.mean(squared_difference)  # Note the `axis=-1`
+#   # Additional metrics to computes
+#   def SSIM_metric(y_true, y_pred):
+#     y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
+#     # squared_difference = tf.keras.ops.square(y_true - y_pred)
+#     # return tf.keras.ops.mean(squared_difference)  # Note the `axis=-1`
       
-    return tf.reduce_mean(tf.image.ssim(
-    img1 = y_true,
-    img2 = y_pred,
-    max_val = 1,
-    filter_size=winKernel,
-    filter_sigma=1.5,
-    k1=0.01,
-    k2=0.03,
-    return_index_map=False
-    )   )
+#     return tf.reduce_mean(tf.image.ssim(
+#     img1 = y_true,
+#     img2 = y_pred,
+#     max_val = 1,
+#     filter_size=winKernel,
+#     filter_sigma=1.5,
+#     k1=0.01,
+#     k2=0.03,
+#     return_index_map=False
+#     )   )
 
 
 
-  # Compile model with the optimizer in the sweep definition
-  if params['optimizer'] == 'Adadelta':
-     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-  elif params['optimizer'] == 'Nadam':
-     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-  else:
-     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+#   # Compile model with the optimizer in the sweep definition
+#   if params['optimizer'] == 'Adadelta':
+#      model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+#               loss=lossfunc, 
+#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+#   elif params['optimizer'] == 'Nadam':
+#      model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+#               loss=lossfunc, 
+#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+#   else:
+#      model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+#               loss=lossfunc, 
+#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
 
-  return model
+#   return model
 
 # %% Additional metrics to computes
 def SSIM_metric(y_true, y_pred):
@@ -970,11 +988,6 @@ class timecallback(tf.keras.callbacks.Callback):
         # Return the list of epoch times as a numpy array
         return np.array(self.times)     
 
-tf.keras.callbacks.ModelCheckpoint(filepath=cp_savepath,
-                                                 save_weights_only=True,
-                                                 save_best_only = True,
-                                                 monitor = 'val_loss',
-                                                 verbose=1)
 
 # Early stopping callback which monitors improvements and stops training if
 # it stagnates.
@@ -1036,7 +1049,6 @@ match params['type']:
       CNNModel = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
 
 def preModel_compile(CNNModel):
-  
   # Compile model with the optimizer in the sweep definition
   if params['optimizer'] == 'Adadelta':
       CNNModel.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
@@ -1055,7 +1067,7 @@ def preModel_compile(CNNModel):
 if not params['type'] == 'default':
    if not params['type'] == 'UNet':
     CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
-   CNNModel = preModel_compile(CNNModel)
+CNNModel = preModel_compile(CNNModel)
 
 
 CNNModel.summary()

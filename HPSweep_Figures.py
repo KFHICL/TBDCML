@@ -216,23 +216,21 @@ testUnseen = False # We can load a model and test it on an unseen dataset.
 # compareParam = 'Dataset' # parameter to plot comparison of
 # dataset = 'MC24'
 
-jobName = '20241219_MC241000ConstVf_TL_' # MC24 constant Vf sweep
-compareParam = 'Dataset' # parameter to plot comparison of
-dataset = 'MC24'
-
-# jobName = 'MC24DatasetSize2908_' # MC24 DatasetSize sweep
+# jobName = '20241219_MC241000ConstVf_TL_' # MC24 constant Vf sweep
 # compareParam = 'Dataset' # parameter to plot comparison of
 # dataset = 'MC24'
+
+jobName = 'MC24DatasetSize2908_' # MC24 DatasetSize sweep
+compareParam = 'Dataset' # parameter to plot comparison of
+dataset = 'MC24'
 
 # jobName = 'Epsilon2507_' # MC24 DatasetSize sweep
 # compareParam = 'epsilon' # parameter to plot comparison of
 # dataset = 'LFC18'
 
-
-
-
-
-
+# jobName = '20250311_LFC18_CrossValidation_PreOpti_' # MC24 constant Vf sweep
+# compareParam = 'Dataset' # parameter to plot comparison of
+# dataset = 'MC24'
 
 
 # jobName = 'MC24CrossValidation1408_' # MC24 CrossValidation after hyperparameter optimisation
@@ -282,12 +280,14 @@ else:
 # %% Extras to be loaded in
 
 # LFC18 grid
-gridPathOld = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
+gridPathOld = os.path.join(current_dir, 'Data', 'FlorianAbaqusFiles', 'sampleGrid.json')
+# r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
 with open(gridPathOld) as json_file: # load into dict
     LFC18_grid = np.array(json.load(json_file)) # grid for plotting
 
 # MC24 grid
-gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+gridPath = os.path.join(current_dir, 'Data', 'MatLabModelFiles', 'sampleGrid.json')
+#  r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
 with open(gridPath) as json_file: # load into dict
     MC24_grid = np.array(json.load(json_file)) # grid for plotting
 
@@ -298,7 +298,8 @@ elif dataset == 'MC24':
 
 # MC24 dataset used to train model which is evaluated on unseen specimens
 
-MC24_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417_100Samples"
+MC24_path = os.path.join(current_dir, 'Data', 'MatLabModelFiles', '20240703_1417_100Samples')
+#  r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240703_1417_100Samples"
 
 
 
@@ -307,7 +308,8 @@ MC24_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\
 # 100 unseen samples
 # MC24_path_Unseen = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240819_0954_100UnseenSamples"
 # 1000 unseen samples
-MC24_path_Unseen = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240905_1625_1000UnseenSamples"
+MC24_path_Unseen = os.path.join(current_dir, 'Data', 'MatLabModelFiles', '20240905_1625_1000UnseenSamples')
+# r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240905_1625_1000UnseenSamples"
 
 
 MC24_numSamples = len(os.listdir(MC24_path))
@@ -958,6 +960,9 @@ resolution_scaling = 1 # Manually scale DPI and text accordingly
 ax = plt.subplot(1,1,1)
 g = sns.boxplot(ax=ax, data=RSMEs_Df_all, x="Dataset", y="value", hue="Specimens", fill=True, medianprops=dict(alpha=0.7),palette = 'viridis')
 ax.set_ylabel('RMSE')
+ax.set_xlabel('MC24 Dataset Size')
+ax.set_xticklabels([100, 200, 500, 1000])
+
 plt.grid()
 h,l = ax.get_legend_handles_labels()
 # ax.get_legend().remove()
@@ -965,7 +970,7 @@ h,l = ax.get_legend_handles_labels()
 # fig.legend(title='Dataset',handles = h,labels=l, 
 #            loc="lower center", ncol=2,bbox_to_anchor=(0.55, -0.2))
 
-plt.savefig('Train_val_RMSE_DatasetSize.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.savefig('MC24DatasetSize2908_RMSETrainVal.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
 
 plt.show()
 

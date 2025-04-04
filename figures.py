@@ -42,8 +42,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
-import cv2
-import plotly
+# import cv2
+# import plotly
 import warnings
 os.environ["TF_USE_LEGACY_KERAS"]="1" # Needed to import models saved before keras 3.0 release
 import tf_keras as keras # Legacy keras version which is equal to the one on the HPC
@@ -54,15 +54,20 @@ import argparse
 plt.style.use("seaborn-v0_8-colorblind")
 sampleNum = 0
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(current_dir) != "Individual Project":
+    current_dir = os.path.dirname(current_dir)
+
 # %% Import all datasets
 
 # MC24 extended needs slightly different loading method
-
-gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid_224.json"
+gridPath = os.path.join(current_dir, "Data", "MatLabModelFiles", "sampleGrid_224.json")
+# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid_224.json"
 with open(gridPath) as json_file: # load into dict
     MC24x_grid = np.array(json.load(json_file)) # grid for plotting
 
-MC24x_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20241017_1550_224_4kSamples"
+# MC24x_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20241017_1550_224_4kSamples"
+MC24x_path = os.path.join(current_dir, "Data", "MatLabModelFiles", "20241017_1550_224_4kSamples")
 MC24x_numSamples = len(os.listdir(MC24x_path)) # Number of data samples (i.e. TBDC specimens)
 MC24x_sampleShape = [224,224]
 MC24x_xNames = ['Ex','Ey','Gxy','Vf','c2'] # Names of input features in input csv
@@ -118,29 +123,34 @@ for i,file in enumerate(os.listdir(MC24x_path)):
 
 
 
-gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+# gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+gridPath = os.path.join(current_dir, "Data", "MatLabModelFiles", "sampleGrid.json")
 with open(gridPath) as json_file: # load into dict
     MC24_grid = np.array(json.load(json_file)) # grid for plotting
 
-MC24_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1357_100SamplesVfVariable'
+# MC24_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1357_100SamplesVfVariable'
+MC24_path = os.path.join(current_dir, "Data", "MatLabModelFiles", "20240809_1357_100SamplesVfVariable")
 MC24_numSamples = len(os.listdir(MC24_path)) # Number of data samples (i.e. TBDC specimens)
 MC24_sampleShape = [60,20]
 MC24_xNames = ['Ex','Ey','Gxy','Vf','c2'] # Names of input features in input csv
 MC24_yNames = ['FI'] # Names of ground truth features in input csv
 
 # MC24 dataset with constant Vf
-MC24_path_constVf = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1402_100SamplesVfConstant'
+# MC24_path_constVf = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240809_1402_100SamplesVfConstant'
+MC24_path_constVf = os.path.join(current_dir, "Data", "MatLabModelFiles", "20240809_1402_100SamplesVfConstant")
 
 # MC24 dataset not seen by any model
-MC24_path_Unseen = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240819_0954_100UnseenSamples"
-
+# MC24_path_Unseen = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\20240819_0954_100UnseenSamples"
+MC24_path_Unseen = os.path.join(current_dir, "Data", "MatLabModelFiles", "20240819_0954_100UnseenSamples")
 
 # LFC18 dataset
-gridPathOld = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
+# gridPathOld = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json"
+gridPathOld = os.path.join(current_dir, "Data", "FlorianAbaqusFiles", "sampleGrid.json")
 with open(gridPathOld) as json_file: # load into dict
     LFC18_grid = np.array(json.load(json_file)) # grid for plotting
 
-LFC18_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # The data format after extracting from Abaqus
+# LFC18_path = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\datain' # The data format after extracting from Abaqus
+LFC18_path = os.path.join(current_dir, "Data", "FlorianAbaqusFiles", "datain") # The data format after extracting from Abaqus
 LFC18_numSamples = len(os.listdir(LFC18_path)) # Number of data samples (i.e. TBDC specimens)
 LFC18_sampleShape = [55,20]
 LFC18_xNames = ['E11','E22','E12'] # Names of input features in input csv
@@ -290,7 +300,8 @@ MC24_Y_Unseen = MC24_samples2D_Unseen[:,:,:,MC24_gtIdx_Unseen] # Labels
 # %% Do predictions on unseen samples
 
 # Load model
-modelPaths = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408"
+# modelPaths = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408"
+modelPaths = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "MC24CrossValidation1408")
 repeats = 1
 numModels = 1
 
@@ -327,8 +338,8 @@ for i in range(repeats): # For each repeat (1=indexed)
 
 
 
-loaded_model = keras.models.load_model(r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408_1\dataout\model_MC24CrossValidation1408_1_1.keras")
-
+# loaded_model = keras.models.load_model(r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation1408_1\dataout\model_MC24CrossValidation1408_1_1.keras")
+# loaded_model = keras.models.load_model(modelPath)
 # %% FUnction for creating contour plot
 
 def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5):
@@ -1926,9 +1937,17 @@ dataset = 'LFC18'
 groundTruths = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
 predictions = np.empty(shape = (len(samples), sampleShape[0],sampleShape[1]))* np.nan  # Array of ground truths
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(current_dir) != "Individual Project":
+    current_dir = os.path.dirname(current_dir)
+
 # Results imported manually (1) (model depth = 1):
-predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_2.json"
-gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_2.json"
+# predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_2.json"
+# gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_2.json"
+
+predPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "predictions_ModelDepth1806_1_2.json")
+gtPathPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "groundTruth_ModelDepth1806_1_2.json")
+
 
 with open(predPath) as json_file: # load into dict
             prediction = np.array(json.load(json_file))
@@ -1940,8 +1959,10 @@ groundTruths[0] = groundTruth[0].reshape(sampleShape)
 predictions[0] = prediction[0].reshape(sampleShape)
 
 # model depth 2:
-predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_3.json"
-gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_3.json"
+# predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_3.json"
+# gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_3.json"
+predPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "predictions_ModelDepth1806_1_3.json")
+gtPathPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "groundTruth_ModelDepth1806_1_3.json")
 with open(predPath) as json_file: # load into dict
             prediction = np.array(json.load(json_file))
 
@@ -1952,8 +1973,10 @@ groundTruths[1] = groundTruth[2].reshape(sampleShape)
 predictions[1] = prediction[2].reshape(sampleShape)
 
 # Model depth 3:
-predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_1.json"
-gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_1.json"
+# predPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\predictions_ModelDepth1806_1_1.json"
+# gtPathPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\ModelDepth1806_1\dataout\groundTruth_ModelDepth1806_1_1.json"
+predPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "predictions_ModelDepth1806_1_1.json")
+gtPathPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "ModelDepth1806_1", "dataout", "groundTruth_ModelDepth1806_1_1.json")
 with open(predPath) as json_file: # load into dict
             prediction = np.array(json.load(json_file))
 
@@ -2166,12 +2189,16 @@ sampleShapeLFC18 = [55,20]
 sampleShapeMC24 = [60,20]
 
 
-LFC18_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\groundTruth_val_CrossValidation2808_1_1.json"
-LFC18_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\predictions_val_CrossValidation2808_1_1.json"
+# LFC18_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\groundTruth_val_CrossValidation2808_1_1.json"
+# LFC18_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\CrossValidation2808_1\dataout\predictions_val_CrossValidation2808_1_1.json"
+LFC18_GTPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "CrossValidation2808_1", "dataout", "groundTruth_val_CrossValidation2808_1_1.json")
+LFC18_PredPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "CrossValidation2808_1", "dataout", "predictions_val_CrossValidation2808_1_1.json")
 
-MC24_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\groundTruth_val_MC24CrossValidation2808_1_1.json"
-MC24_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\predictions_val_MC24CrossValidation2808_1_1.json"
 
+# MC24_GTPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\groundTruth_val_MC24CrossValidation2808_1_1.json"
+# MC24_PredPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults\MC24CrossValidation2808_1\dataout\predictions_val_MC24CrossValidation2808_1_1.json"
+MC24_GTPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "MC24CrossValidation2808_1", "dataout", "groundTruth_val_MC24CrossValidation2808_1_1.json")
+MC24_PredPath = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults", "MC24CrossValidation2808_1", "dataout", "predictions_val_MC24CrossValidation2808_1_1.json")
 
 with open(LFC18_PredPath) as json_file: # load into dict
             predictionLFC18 = np.array(json.load(json_file))
@@ -2250,9 +2277,9 @@ for i in samples:
          plt.title('Prediction')
     # Error
     ax = plt.subplot(rows, cols, 3+i*cols)
-    cScale2 = plot_contour(grid = grid, samples2D = im2-im1,  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+    cScale2 = plot_contour(grid = grid, samples2D = np.abs(im2-im1),  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
     if i == 0:
-         plt.title('Error')
+         plt.title('Abs Error')
     # SSIM over whole image
     ax = plt.subplot(rows, cols, 4+i*cols)
     cScale2 = plot_contour(grid = grid, samples2D = simIm,  ax = ax, xlab  = None, ylab = None, cbarlab = 'SSIM', cBarBins = 3, scale = np.linspace(0,1,15))
@@ -2304,7 +2331,7 @@ for i in samples:
 
     # Error
     ax = plt.subplot(rows, cols, 3+i*cols+8)
-    cScale2 = plot_contour(grid = grid, samples2D = im2-im1,  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
+    cScale2 = plot_contour(grid = grid, samples2D = np.abs(im2-im1),  ax = ax, xlab  = None, ylab = None, cbarlab = 'Error', cBarBins = 3)
 
     # SSIM over whole image
     ax = plt.subplot(rows, cols, 4+i*cols+8)
@@ -2352,5 +2379,5 @@ for i in samples:
 
 
 
-plt.savefig('Final_model_examples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.savefig('Final_model_examples_abs.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.2)
 plt.show()

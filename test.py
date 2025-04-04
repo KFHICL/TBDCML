@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-TESTING = 1
+TESTING = 0
 # os.environ["TF_USE_LEGACY_KERAS"]="1" # Needed to import models saved before keras 3.0 release
 # import tf_keras as keras # Legacy keras version which is equal to the one on the HPC
 
@@ -72,8 +72,8 @@ resultpath = 'results_{jn}_{num}.json'.format(jn=jobname, num = parallel)
 resultpath = os.path.join('dataoutTESTJOB',resultpath)
 #%% Import data
 # trainDat_path = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\datain'
-# trainDat_path = r'C:\Users\kfh23\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
-trainDat_path = r'C:\Users\kaspe\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
+trainDat_path = r'C:\Users\kfh23\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
+# trainDat_path = r'C:\Users\kaspe\OneDrive - Imperial College London\KFH23_GENERAL\PROJECTS\20241029_MSc_Paper\Data\datain'
 
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   trainDat_name = 'Gaudron2018' 
@@ -217,56 +217,57 @@ def loadSample(path = str):
   return headers, values
     
 
-randAug = tf.random.Generator.from_seed(seed) # Random number generator used for random augmentations
-def augmentImage(inputMatrices,gtMatrix):
-    '''
-  Apply augmentations to increase the dataset size
 
-  Args
-  ----------
-  inputMatrices: the Batchx55x20x3 input
-  gtMatrix: the Batchx55x30 ground truth
 
-  Returns
-  ----------
-  inputMatrices,gtMatrix with consistent augmentations applied
+# def augmentImage(inputMatrices,gtMatrix):
+#     '''
+#   Apply augmentations to increase the dataset size
 
-  '''
-    height, width = sampleShape[0], sampleShape[1] # image dimensions
+#   Args
+#   ----------
+#   inputMatrices: the Batchx55x20x3 input
+#   gtMatrix: the Batchx55x30 ground truth
 
-    if randAug.normal([]) > 0: # Randomly flip an image horizontally 50% of the time
-      inputMatrices = tf.image.flip_left_right(inputMatrices)
-      gtMatrix = tf.image.flip_left_right(gtMatrix)
-      # gtMatrix = tf.image.flip_left_right(tf.reshape(gtMatrix,[-1,height,width,1]))
-      # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+#   Returns
+#   ----------
+#   inputMatrices,gtMatrix with consistent augmentations applied
 
-    if  randAug.normal([]) > 0: # Randomly flip an image vertically 50% of the time
-      inputMatrices = tf.image.flip_up_down(inputMatrices)
-      gtMatrix = tf.image.flip_up_down(gtMatrix)
-      # gtMatrix = tf.image.flip_up_down(tf.reshape(gtMatrix,[-1,height,width,1]))
-      # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+#   '''
+#     height, width = sampleShape[0], sampleShape[1] # image dimensions
 
-    # We can crop and resize but this messes with the boundary conditions hence not done right now
-    # if randAug.normal([]) > 0.67: # Scale to a random size within the bounding box and fit to a random location within this
-    #   crop_width = randAug.uniform(shape=(), minval=math.floor(0.7 * width), maxval=math.floor(0.9 * width), dtype = tf.int32)
-    #   crop_height = randAug.uniform(shape=(), minval=math.floor(0.7 * height), maxval=math.floor(0.9 * height), dtype = tf.int32)
-    #   offset_x = randAug.uniform(shape=(), minval=0, maxval=(width - crop_width), dtype = tf.int32)
-    #   offset_y = randAug.uniform(shape=(), minval=0, maxval=(height - crop_height), dtype = tf.int32)
+#     if randAug.normal([]) > 0: # Randomly flip an image horizontally 50% of the time
+#       inputMatrices = tf.image.flip_left_right(inputMatrices)
+#       gtMatrix = tf.image.flip_left_right(gtMatrix)
+#       # gtMatrix = tf.image.flip_left_right(tf.reshape(gtMatrix,[-1,height,width,1]))
+#       # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
 
-    #   inputMatrices = tf.image.crop_to_bounding_box(inputMatrices, offset_y, offset_x, crop_height, crop_width) # Crop to bounding box
-    #   gtMatrix = tf.image.crop_to_bounding_box(tf.reshape(gtMatrix,[-1,height,width,1]), offset_y, offset_x, crop_height, crop_width)
-    #   newHeight = crop_height
-    #   newWidth = crop_width
-    #   gtMatrix = tf.reshape(gtMatrix,[-1,newHeight,newWidth]) # Reshape ground truth back to not have channels dimensions
+#     if  randAug.normal([]) > 0: # Randomly flip an image vertically 50% of the time
+#       inputMatrices = tf.image.flip_up_down(inputMatrices)
+#       gtMatrix = tf.image.flip_up_down(gtMatrix)
+#       # gtMatrix = tf.image.flip_up_down(tf.reshape(gtMatrix,[-1,height,width,1]))
+#       # gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+
+#     # We can crop and resize but this messes with the boundary conditions hence not done right now
+#     # if randAug.normal([]) > 0.67: # Scale to a random size within the bounding box and fit to a random location within this
+#     #   crop_width = randAug.uniform(shape=(), minval=math.floor(0.7 * width), maxval=math.floor(0.9 * width), dtype = tf.int32)
+#     #   crop_height = randAug.uniform(shape=(), minval=math.floor(0.7 * height), maxval=math.floor(0.9 * height), dtype = tf.int32)
+#     #   offset_x = randAug.uniform(shape=(), minval=0, maxval=(width - crop_width), dtype = tf.int32)
+#     #   offset_y = randAug.uniform(shape=(), minval=0, maxval=(height - crop_height), dtype = tf.int32)
+
+#     #   inputMatrices = tf.image.crop_to_bounding_box(inputMatrices, offset_y, offset_x, crop_height, crop_width) # Crop to bounding box
+#     #   gtMatrix = tf.image.crop_to_bounding_box(tf.reshape(gtMatrix,[-1,height,width,1]), offset_y, offset_x, crop_height, crop_width)
+#     #   newHeight = crop_height
+#     #   newWidth = crop_width
+#     #   gtMatrix = tf.reshape(gtMatrix,[-1,newHeight,newWidth]) # Reshape ground truth back to not have channels dimensions
     
-    #   inputMatrices = tf.image.resize(inputMatrices, (height, width)) # Resize to original size (we want all images same size) - this distorts the image
-    #   gtMatrix = tf.image.resize(tf.reshape(gtMatrix,[-1,newHeight,newWidth,1]), (height, width), method='nearest')
-    #   gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
-    #   inputMatrices = tf.cast(inputMatrices, tf.float64)
-    #   gtMatrix = tf.cast(gtMatrix, tf.float64)
+#     #   inputMatrices = tf.image.resize(inputMatrices, (height, width)) # Resize to original size (we want all images same size) - this distorts the image
+#     #   gtMatrix = tf.image.resize(tf.reshape(gtMatrix,[-1,newHeight,newWidth,1]), (height, width), method='nearest')
+#     #   gtMatrix = tf.reshape(gtMatrix,[-1,height,width])
+#     #   inputMatrices = tf.cast(inputMatrices, tf.float64)
+#     #   gtMatrix = tf.cast(gtMatrix, tf.float64)
 
       
-    return (inputMatrices,gtMatrix)
+#     return (inputMatrices,gtMatrix)
 
 
 def show_prediction(sample, predictions, names, ground_truth, grid):
@@ -430,7 +431,26 @@ normalizer.adapt(feature_ds)
 
 # Training preprocessing
 train_ds = train_ds.cache() # cache dataset for it to be used over iterations. Any operation before this will not be reapplied each iteration
-train_ds = train_ds.shuffle(buffer_size = len(train_ds)).batch(batchSize) # Shuffle for random order
+train_ds = train_ds.shuffle(buffer_size = len(train_ds)) # Shuffle for random order
+
+
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=0):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)
+
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
+
+if params['dsAugmentation'] == 1:
+  # train_ds = train_ds.map(
+  #   lambda x, y: (augmentDs(x, training=True),augmentDs(y, training=True))) # Apply augmentations to increase the dataset size
+  train_ds = train_ds.map(Augment())
+train_ds = train_ds.batch(batchSize) # Batch
 
 train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
 # if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
@@ -659,7 +679,7 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   Args
   ----------
-  inputShape: the 55x20x3 input image shape
+  inputShape: the length x width x features, input image shape
   outputShape: the prediction image shape (currently unused)
   params: The hyperparameters for the given sweep index
 
@@ -686,8 +706,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
-  if params['dsAugmentation'] == 1:
-    x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
+  # if params['dsAugmentation'] == 1:
+  #   x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
 
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
@@ -808,8 +828,8 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
       x = tf.keras.layers.Concatenate()([x, encoder1])
 
    # Custom activation function is linear between 0 and 1 and otherwise constant
-  def custom_activation(x):
-      return tf.math.minimum(K.relu(x), 1)
+  # def custom_activation(x):
+  #     return tf.math.minimum(K.relu(x), 1)
 
   x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',activation='linear')(x)
 
@@ -1314,11 +1334,6 @@ class timecallback(tf.keras.callbacks.Callback):
         # Return the list of epoch times as a numpy array
         return np.array(self.times)
 
-tf.keras.callbacks.ModelCheckpoint(filepath=cp_savepath,
-                                                 save_weights_only=True,
-                                                 save_best_only = True,
-                                                 monitor = 'val_loss',
-                                                 verbose=1)
 
 # Early stopping callback which monitors improvements and stops training if
 # it stagnates.
@@ -1399,7 +1414,7 @@ def preModel_compile(CNNModel):
 if not params['type'] == 'default':
    if not params['type'] == 'UNet':
     CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
-   CNNModel = preModel_compile(CNNModel)
+CNNModel = preModel_compile(CNNModel)
 
 
 CNNModel.summary()
@@ -1463,50 +1478,6 @@ CNNModel.load_weights(os.path.join(checkpoint_dir,cpLoadName)) # load best model
 #    ground_truth_val_invStandard = ground_truth_val_invStandard.reshape(y_valShape)
 
 
-train_results = mobileNetV2Model.evaluate(
-    x=train_ds_eval,
-    y=None,
-    batch_size=None,
-    verbose='auto',
-    sample_weight=None,
-    steps=None,
-    callbacks=None,
-    return_dict=True
-)
-
-train_results = pd.DataFrame.from_dict(train_results, orient='index',
-                       columns=['train']).T
-
-val_results = mobileNetV2Model.evaluate(
-    x=val_ds_eval,
-    y=None,
-    batch_size=None,
-    verbose='auto',
-    sample_weight=None,
-    steps=None,
-    callbacks=None,
-    return_dict=True
-)
-val_results = pd.DataFrame.from_dict(val_results, orient='index',
-                       columns=['val']).T
-
-
-test_results = mobileNetV2Model.evaluate(
-    x=test_ds_eval,
-    y=None,
-    batch_size=None,
-    verbose='auto',
-    sample_weight=None,
-    steps=None,
-    callbacks=None,
-    return_dict=True
-)
-
-test_results = pd.DataFrame.from_dict(test_results, orient='index',
-                       columns=['test']).T
-
-results = pd.concat([train_results, val_results, test_results])
-results['RMSE'] = np.sqrt(results['mean_squared_error'])
 
 
 train_results = CNNModel.evaluate(
