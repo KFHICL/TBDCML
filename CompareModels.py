@@ -60,7 +60,12 @@ plt.style.use("seaborn-v0_8-colorblind")
 
 trainEpochs = 1000 #500 # Maximum number of epochs for trained models
 # Results folder with hyperparameter sweeps and cross-validation results:
-resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+while os.path.basename(current_dir) != "Individual Project":
+    current_dir = os.path.dirname(current_dir)
+
+resultFolder = os.path.join(current_dir, "Data", "CNNTrainingSweepsResults")
+# resultFolder = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\CNNTrainingSweepsResults'
 
 baselineIdx = 1 # Index of reference model
 warnings.warn("Warning: if displaying data generated prior to 14.06.2024 the comparison will be between ALL DATA and validation data even if TRAINING DATA is displayed")
@@ -484,11 +489,14 @@ def sweepPlot(sweep, paramVariables, figname, sampleNum = 2):
         if "Dataset" in parameters:
             print(parameters['Dataset'].loc[sweep[i]])
             if not parameters['Dataset'].loc[sweep[i]] == 'LFC18':
-                gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
+                gridPath = os.path.join(current_dir, "Data", "MatLabModelFiles", "sampleGrid.json")
+                # gridPath = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid.json"
             else:
-                gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
+                gridPath = os.path.join(current_dir, "Data", "FlorianAbaqusFiles", "sampleGrid.json")
+                # gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
         else:
-            gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
+            gridPath = os.path.join(current_dir, "Data", "FlorianAbaqusFiles", "sampleGrid.json")
+            # gridPath = r'C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\FlorianAbaqusFiles\sampleGrid.json'
         with open(gridPath) as json_file: # load into dict
             grid = np.array(json.load(json_file)) # grid for plotting
 

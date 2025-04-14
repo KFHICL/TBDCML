@@ -171,7 +171,6 @@ elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224
 
 
 
-yNames = ['FI'] # Names of ground truth features in input csv
 numSamples = len(os.listdir(trainDat_path))*samplesPerFile # number of samples is number of files in datain
 if TESTING:
   numSamples = 40
@@ -184,9 +183,6 @@ epochs = params['Epochs'] # Max epochs for training
 steps_per_epoch = train_length // batchSize
 validation_steps = valSize // batchSize
 
-# For reproducible results set a seed
-seed = 0
-tf.random.set_seed(seed)
 
 def formatCoords(values,coordIdx):
     coords = [[x for x in values[:,coordIdx][y].split(' ') if x] for y in range(len(values[:,coordIdx]))] # Split coordinates by delimiter (space)
@@ -403,16 +399,16 @@ headers, samples = load_all_samples(trainDat_path, numSamples)
 if TESTING == 1:
   batchSize = 2
 
-samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
+samples = samples.shuffle(buffer_size=len(samples), seed=seed) # Shuffle set
 train_ds = samples.take(train_length)
 remaining = samples.skip(train_length)
 val_ds = remaining.take(valSize)
 test_ds = remaining.skip(valSize)
 
 # Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
-train_ds_eval = train_ds.batch(batchSize)
-val_ds_eval = val_ds.batch(batchSize)
-test_ds_eval = test_ds.batch(batchSize)
+train_ds_eval = train_ds.batch(batchSize).cache()
+val_ds_eval = val_ds.batch(batchSize).cache()
+test_ds_eval = test_ds.batch(batchSize).cache()
 
 X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
@@ -459,12 +455,14 @@ train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching 
 
 # Validation preprocessing
 val_ds = val_ds.cache() # cache dataset for it to be used over iterations
-val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+# val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize) # avoid shuffling to be deterministic
+val_ds = val_ds.batch(batchSize) # Batch
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Test preprocessing
 test_ds = test_ds.cache() # cache dataset for it to be used over iterations
-test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+# test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+test_ds = test_ds.batch(batchSize) # Batch
 test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 
@@ -1281,7 +1279,7 @@ def TBDCNet_UNet(inputShape, outputShape, params):
 # Checkpoints to allow saving best model at various points
 # checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn='TESTJOB', num = 1)
 # checkpoint_path = 'training_checkpoints_{jn}_{num}/model.weights.h5'.format(jn='TESTJOB', num = 1)
-checkpoint_path = 'epoch-{epoch:02d}.weights.h5'
+checkpoint_path = 'epoch-{epoch:04d}.weights.h5'
 checkpoint_dir = 'training_checkpoints_{jn}_{num}'.format(jn=jobname, num = 1)
 cpLoadName = 'model.weights.h5' # The name of the checkpoint with the best weights at the end of training
 
@@ -1428,8 +1426,14 @@ modelCNNname = 'CNNModel1'
 
 # Known issue: sometimes throws error related to the shape of the labels...
 # Fit model to Failure index
-epochs = 1000
+epochs = 200
 time_callback_ins = timecallback()
+# Clear existing files in the checkpoint directory
+for file in os.listdir(checkpoint_dir):
+  file_path = os.path.join(checkpoint_dir, file)
+  if os.path.isfile(file_path):
+    os.remove(file_path)
+
 modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
                                 steps_per_epoch=steps_per_epoch,
@@ -1523,7 +1527,39 @@ test_results = pd.DataFrame.from_dict(test_results, orient='index',
                        columns=['test']).T
 
 results = pd.concat([train_results, val_results, test_results])
-# RMSE
+results['RMSE'] = np.sqrt(results['mean_squared_error'])
+print(results)
+
+
+
+# %%
+# Plot training and validation loss curves
+plt.figure(figsize=(10, 6))
+plt.plot(modelCNN_history.history['loss'], label='Training Loss')
+plt.plot(modelCNN_history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.yscale('log')
+plt.hlines(y=0.023481, xmin=0, xmax=epochs, color='orange', linestyle='--', label='Val loss from eval')
+plt.hlines(y=0.021117, xmin=0, xmax=epochs, color='blue', linestyle='--', label='Train loss from eval')
+plt.hlines(y=np.min(modelCNN_history.history['val_loss']), xmin=0, xmax=epochs, color='g', linestyle='--', label='Min val loss')
+# plt.ylim([0.01,0.03])
+plt.title('Training and Validation Loss')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plot training and validation metrics (e.g., MAE)
+# plt.figure(figsize=(10, 6))
+# plt.plot(modelCNN_history.history['mean_absolute_error'], label='Training MAE')
+# plt.plot(modelCNN_history.history['val_mean_absolute_error'], label='Validation MAE')
+# plt.xlabel('Epochs')
+# plt.ylabel('Mean Absolute Error')
+# plt.title('Training and Validation MAE')
+# plt.legend()
+# plt.grid(True)
+# plt.show()
+# # RMSE
 # RMSE = tf.keras.metrics.RootMeanSquaredError()
 # RMSE.update_state(train_ds_eval,predCNN)
 # print('RMSE for training set = ' + str(RMSE.result().numpy()))
@@ -1590,6 +1626,58 @@ with open(resultpath, 'w') as f: # Dump data to json file at specified path
 # Save the model
 CNNModel.save(modelOutPath)
 # %% Various tests
+# Predict on a single sample from the test dataset
+# modelPath = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\LFC18BaselineCrossValidation2208\LFC18BaselineCrossValidation2208_1\dataout\model_LFC18BaselineCrossValidation2208_1_1.keras"
+# testmodel = tf.keras.models.load_model(modelPath, custom_objects={'SSIM_metric': SSIM_metric, 'custom_loss': custom_loss})
+for sample, ground_truth in train_ds.take(1):
+  prediction = CNNModel.predict(tf.expand_dims(sample[0], axis=0))  # Predict on the first sample in the batch
+  
+  prediction = tf.squeeze(prediction)  # Remove batch dimension
+  
+  # print(ground_truth.shape)
+  ground_truth = tf.squeeze(ground_truth[0])  # Remove batch dimension
+
+  sample = sample[0]
+  # print(sample.shape)
+  # sample = tf.squeeze(sample[0], axis=0)  # Remove batch dimension
+RMSE = tf.keras.metrics.RootMeanSquaredError()
+RMSE.update_state(ground_truth,prediction)
+print(RMSE.result().numpy())
+
+MSE = tf.keras.metrics.MeanSquaredError()
+MSE.update_state(ground_truth,prediction)
+print(MSE.result().numpy())
+
+# Plot the prediction field vs ground truth
+grid_x, grid_y = tf.meshgrid(
+  tf.linspace(0.0, 1.0, sample.shape[1]),
+  tf.linspace(0.0, 1.0, sample.shape[0])
+)
+
+# Plot the prediction and ground truth
+plt.figure(figsize=(12, 6))
+
+# Ground truth
+plt.subplot(1, 2, 1)
+plt.contourf(grid_x, grid_y, ground_truth)
+plt.colorbar()
+plt.title('Ground Truth')
+plt.xlabel('x')
+plt.ylabel('y')
+
+# Prediction
+plt.subplot(1, 2, 2)
+plt.contourf(grid_x, grid_y, prediction)
+plt.colorbar()
+plt.title('Prediction')
+plt.xlabel('x')
+plt.ylabel('y')
+
+plt.tight_layout()
+plt.show()
+
+
+
 # numSamples = 100
 # kFold = 10
 # k = 10

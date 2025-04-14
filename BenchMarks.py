@@ -46,6 +46,20 @@ import argparse
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 
+#####################################################################
+# Settings
+#####################################################################
+
+yNames = ['FI'] # Names of ground truth features in input csv
+normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
+
+# For reproducible results set a seed
+seed = 0
+tf.random.set_seed(seed)
+
+#####################################################################
+# Formatting and settings done automatically
+#####################################################################
 # Add arguments for parallel running and training of several different models 
 argParser = argparse.ArgumentParser()
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
@@ -56,7 +70,6 @@ sweepIdx = int(args.parallel) # Index of model in sweep definition file
 
 # Sweep definition containing hyperparameters
 sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file, one for all repetitions hence [:-2]
-
 print(os.getcwd())
 print(sweepPath)
 os.listdir(os.getcwd())
@@ -64,15 +77,6 @@ os.listdir(os.getcwd())
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
-
-
-yNames = ['FI'] # Names of ground truth features in input csv
-normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
-
-# For reproducible results set a seed
-seed = 0
-tf.random.set_seed(seed)
-
 
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
 histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Training history file
@@ -98,7 +102,7 @@ RMSEOutPath_val = os.path.join('dataout',RMSEOutPath_val)
 resultpath = 'results_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel)
 resultpath = os.path.join('dataout',resultpath)
 
-
+# Dataset selection
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
   trainDat_name = 'Gaudron2018' 
   sampleShape = [55,20]
@@ -162,11 +166,33 @@ elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224
   samplesPerFile = 40
   winKernel = 17
 
+elif params['Dataset'] == 'MC24_VarVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) variable Vf and random seed equivalent to the const Vf set
+  trainDat_name = 'MatLabModel2024_100SamplesVfVariable' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 1
+  winKernel = 7
+
+elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) constant Vf 
+  trainDat_name = 'MatLabModel2024_100SamplesVfConstant' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 1
+  winKernel = 7
+
 # Various settings
 trainDat_path = os.path.join('datain',trainDat_name)
-yNames = ['FI'] # Names of ground truth features in input csv
-
-numSamples = len(os.listdir(trainDat_path))*samplesPerFile # number of samples is number of files in datain
+numSamples = len(os.listdir(trainDat_path))*samplesPerFile # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
 valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
 testSize = math.floor(params['testSize']*numSamples)
@@ -244,16 +270,16 @@ def load_all_samples(trainDat_path, numSamples):
 headers, samples = load_all_samples(trainDat_path, numSamples)
 
 
-samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
+samples = samples.shuffle(buffer_size=len(samples), seed=seed) # Shuffle set
 train_ds = samples.take(train_length)
 remaining = samples.skip(train_length)
 val_ds = remaining.take(valSize)
 test_ds = remaining.skip(valSize)
 
 # Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
-train_ds_eval = train_ds.batch(batchSize)
-val_ds_eval = val_ds.batch(batchSize)
-test_ds_eval = test_ds.batch(batchSize)
+train_ds_eval = train_ds.batch(batchSize).cache()
+val_ds_eval = val_ds.batch(batchSize).cache()
+test_ds_eval = test_ds.batch(batchSize).cache()
 
 X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
@@ -261,7 +287,6 @@ X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1
 y_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 y_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
-    
 
 
 # Define mean and variance for normalization based only on training set
@@ -293,21 +318,20 @@ if params['dsAugmentation'] == 1:
   train_ds = train_ds.map(Augment())
 train_ds = train_ds.batch(batchSize) # Batch
 train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
-# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the dataset size
-#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y))
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Validation preprocessing
 val_ds = val_ds.cache() # cache dataset for it to be used over iterations
-val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+val_ds = val_ds.batch(batchSize) # Batch
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Test preprocessing
 test_ds = test_ds.cache() # cache dataset for it to be used over iterations
-test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+# test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+test_ds = test_ds.batch(batchSize) # Batch
 test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-#%%
+
 #####################################################################
 # CNN Model definition
 #####################################################################
@@ -346,9 +370,6 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
-  # if params['dsAugmentation'] == 1:
-  #   x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
-
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
@@ -476,87 +497,6 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   model = tf.keras.Model(inputs=input, outputs=output) # Create model
   return model
-#   # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
-#   lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-#     initial_learning_rate=params['initial_lr'],
-#     decay_steps=steps_per_epoch*epochs,
-#     decay_rate=params['lr_decay_rate'])
-
-#   def custom_loss(y_true,y_pred):
-#     SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-#     loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
-#     loss = tf.reduce_mean(loss)
-#     return loss
-  
-#   def custom_loss5(y_true,y_pred):
-#     SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-#     loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),5))))
-#     loss = tf.reduce_mean(loss)
-#     return loss
-
-#   def peak_loss(y_true,y_pred):
-#     peakVal = tf.reduce_max(y_true, keepdims=True)
-#     cond = tf.equal(y_true, peakVal)
-#     # peakLoc = tf.where(cond)
-#     # peakLoc_1d = tf.squeeze(peakLoc)
-#     errorGrid = tf.math.subtract(y_true,y_pred)
-#     zeroGrid = tf.math.subtract(y_true,y_true) # Grid of zeros so we only get loss in peak location
-#     # peakPred = y_pred[peakLoc_1d.numpy()[0]]
-#     # peakPred = tf.slice(y_pred, peakLoc, [1,1])
-#     loss = tf.where(cond, errorGrid, zeroGrid)
-#     loss = tf.reduce_mean(loss)
-
-#     # loss = peakPred-peakVal
-#     return loss
-
-
-# #   Loss functions can be swept
-#   if params['loss'] == 'MSE':
-#     lossfunc = tf.keras.losses.MeanSquaredError()
-#   elif params['loss'] == 'MAE':
-#     lossfunc = tf.keras.losses.MeanAbsoluteError()
-#   elif params['loss'] == 'Custom':
-#     lossfunc = custom_loss
-#   elif params['loss'] == 'Peak':
-#     lossfunc = peak_loss
-#   elif params['loss'] == 'Custom5':
-#     lossfunc = custom_loss5
-    
-
-#   # Additional metrics to computes
-#   def SSIM_metric(y_true, y_pred):
-#     y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
-#     # squared_difference = tf.keras.ops.square(y_true - y_pred)
-#     # return tf.keras.ops.mean(squared_difference)  # Note the `axis=-1`
-      
-#     return tf.reduce_mean(tf.image.ssim(
-#     img1 = y_true,
-#     img2 = y_pred,
-#     max_val = 1,
-#     filter_size=winKernel,
-#     filter_sigma=1.5,
-#     k1=0.01,
-#     k2=0.03,
-#     return_index_map=False
-#     )   )
-
-
-
-#   # Compile model with the optimizer in the sweep definition
-#   if params['optimizer'] == 'Adadelta':
-#      model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-#               loss=lossfunc, 
-#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-#   elif params['optimizer'] == 'Nadam':
-#      model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-#               loss=lossfunc, 
-#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-#   else:
-#      model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-#               loss=lossfunc, 
-#               metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-
-#   return model
 
 # %% Additional metrics to computes
 def SSIM_metric(y_true, y_pred):
@@ -572,7 +512,6 @@ def SSIM_metric(y_true, y_pred):
   k2=0.03,
   return_index_map=False
   )   )
-
 
 # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
@@ -606,7 +545,6 @@ def peak_loss(y_true,y_pred):
 
   # loss = peakPred-peakVal
   return loss
-
 
 #   Loss functions can be swept
 if params['loss'] == 'MSE':
@@ -926,21 +864,15 @@ def TBDCNet_UNet(inputShape, outputShape, params):
    unet_model = tf.keras.Model(input, outputs, name="U-Net")
 
    return unet_model
-   
-#%%
 #####################################################################
 # Training callbacks
 #####################################################################
 
 # Checkpoints to allow saving best model at various points
-# checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn='TESTJOB', num = 1)
-# checkpoint_path = 'training_checkpoints_{jn}_{num}/model.weights.h5'.format(jn='TESTJOB', num = 1)
-checkpoint_path = 'epoch-{epoch:02d}.weights.h5'
+checkpoint_path = 'epoch-{epoch:04d}.weights.h5'
 checkpoint_dir = 'training_checkpoints_{jn}_{num}'.format(jn=args.jobname, num = args.parallel)
 cpLoadName = 'model.weights.h5' # The name of the checkpoint with the best weights at the end of training
 
-# checkpoint_path = 'training_checkpoints_{jn}_{num}/model.weights.keras'.format(jn='TESTJOB', num = 1)
-# checkpoint_dir = os.path.dirname(checkpoint_path)
 
 try:
   os.mkdir(checkpoint_dir) # Make checkpoint directory
@@ -1000,8 +932,6 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
     baseline=None, 
     restore_best_weights=False # Do not restore best weights after early stopping, we do this manually to allow recording of the full training history
 )
-
-#%%
 #####################################################################
 # Model instantiation
 #####################################################################
@@ -1009,8 +939,6 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
 tf.keras.backend.clear_session() # Clear the state and frees up memory
 
 # CNN Model creation
-# modelCNN = TBDCNet_modelCNN(inputShape = train_in_shape[1:], outputShape = train_out_shape[1:], params = params)
-# modelCNN = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
 
 match params['type']:
   case 'Xception':
@@ -1068,18 +996,14 @@ if not params['type'] == 'default':
    if not params['type'] == 'UNet':
     CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
 CNNModel = preModel_compile(CNNModel)
-
-
 CNNModel.summary()
 
 modelCNNname = 'CNNModel1'
 
-#%%
 #####################################################################
 # Model training
 #####################################################################
 
-# Known issue: sometimes throws error related to the shape of the labels...
 # Fit model to Failure index
 time_callback_ins = timecallback()
 modelCNN_history = CNNModel.fit(train_ds,
@@ -1093,7 +1017,7 @@ modelCNN_history = CNNModel.fit(train_ds,
 # Get the recorded epoch times after training is complete
 epoch_times = {'trainTime':time_callback_ins.get_epoch_times().tolist()}
 
-#%%
+
 #####################################################################
 # Data export
 #####################################################################

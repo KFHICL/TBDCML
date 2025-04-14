@@ -28,10 +28,10 @@ import argparse
 
 # jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241213_MC24x_Baseline'
 # jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20241223_AltModels_Baseline'
-# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250311_LFC18_CrossValidation_PreOpti'
-# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_LFC18_CrossValidation_PostOpti'
-jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_MC24_CrossValidation_PreOpti'
-# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_MC24_CrossValidation_PostOpti'
+jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250311_LFC18_CrossValidation_PreOpti'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250404_LFC18_CrossValidation_PostOpti'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250401_MC24_CrossValidation_PreOpti'
+# jobPath = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\20250404_MC24_CrossValidation_PostOpti'
 crossVal = True # Cross validation or not
 trainEpochs = 1000
 
@@ -49,7 +49,7 @@ for root, dirs, files in os.walk(jobPath):
         for file_name in files:
             
             if "results" in file_name:
-                print(file_name)
+                # print(file_name)
                 file_path = os.path.join(root, file_name)
                 results_files.append(file_path)
             if "trainHist" in file_name:
@@ -111,6 +111,7 @@ def formatHistory(histories, histCols):
     df["epoch"] = epoch_ids
 
     df = df[["repeat", "model", "epoch"] + [i for i in histCols]]
+    
     return df
 
 def formatResults(results, resCols):
@@ -136,6 +137,7 @@ def formatResults(results, resCols):
     df["data"] = data_ids
 
     df = df[["repeat", "model", "data"] + [i for i in resCols]]
+    df['RMSE'] = np.sqrt(df['mean_squared_error'])
     return df
 
 def plotHist(histDf, idx):
@@ -207,11 +209,11 @@ def plotResults(resDf, idx):
 
     ax = plt.subplot(1,1,1)
     ax2 = plt.twinx()
-    g = sns.boxplot(ax=ax, data=resDf, x = 'model', y = "mean_squared_error",hue="data", orient="v", width=0.5,linewidth = 0.25, medianprops=dict(alpha=1,linewidth = 0.25), color="#029E73", whis=(0, 100)) # Remember the models are 1-indexed
+    g = sns.boxplot(ax=ax, data=resDf, x = 'model', y = "RMSE",hue="data", orient="v", width=0.5,linewidth = 0.25, medianprops=dict(alpha=1,linewidth = 0.25), color="#029E73", whis=(0, 100)) # Remember the models are 1-indexed
     h = sns.boxplot(ax=ax2, data=resDf, x = 'model', y = "SSIM_metric", hue="data", orient="v", width=0.5,linewidth = 0.25, medianprops=dict(alpha=1,linewidth = 0.25), color="#0173B2", whis=(0, 100)) # Remember the models are 1-indexed
     # g2 = sns.pointplot(ax = ax,data=resDf, estimator = 'median', ci=None, scale=0.3, color="#029E73", marker='D',linewidth = 0.25)
     # h2 = sns.pointplot(ax = ax2,data=resDf, estimator = 'median', ci=None, scale=0.3, color="#0173B2", marker='o',linewidth = 0.25)
-    ax.set_ylim([0.99*np.min(resDf["mean_squared_error"]),np.max(resDf["mean_squared_error"])+np.max(resDf["mean_squared_error"])-0.9*np.min(resDf["mean_squared_error"])])
+    ax.set_ylim([0.99*np.min(resDf["RMSE"]),np.max(resDf["RMSE"])+np.max(resDf["RMSE"])-0.9*np.min(resDf["RMSE"])])
     ax2.set_ylim([np.min(resDf["SSIM_metric"])-np.max(resDf["SSIM_metric"])+np.min(resDf["SSIM_metric"]),1.01*np.max(resDf["SSIM_metric"])])
     ax.grid(axis = 'y')
     # ax2.grid(False)
@@ -230,6 +232,19 @@ def plotResults(resDf, idx):
     fig.legend(title='Data',handles = h2,labels=l2, 
             loc="lower right", ncol=1,bbox_to_anchor=(1, -.2))
     plt.savefig('res.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.1)
+    # Calculate mean and std for RMSE and SSIM for train and val datasets
+    RMSE_mean = resDf['RMSE'].mean()
+    RMSE_std = resDf['RMSE'].std()
+    SSIM_mean = resDf['SSIM_metric'].mean()
+    SSIM_std = resDf['SSIM_metric'].std()
+
+    # Print the results in a nice table
+    print(f"{'Metric':<10}{'Mean':<15}{'Std':<15}")
+    print(f"{'-'*40}")
+    print(f"{'RMSE':<10}{RMSE_mean:<15.4f}{RMSE_std:<15.4f}")
+    print(f"{'SSIM':<10}{SSIM_mean:<15.4f}{SSIM_std:<15.4f}")
+
+
     plt.show()
 
 
@@ -240,10 +255,10 @@ def plotResults(resDf, idx):
 histDf = formatHistory(histories,histCols = histCols)
 resDf = formatResults(results,resCols = resCols)
 # %% Make plots
-idx = [1,2] # Activation func
-# idx = list(range(1, 11))
+# idx = [1] # Activation func
+idx = list(range(1, 11))
 
-plotHist(histDf, idx)
+# plotHist(histDf, idx)
 plotResults(resDf, idx)
 
 plt.show()

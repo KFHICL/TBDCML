@@ -62,13 +62,13 @@ print(device_lib.list_local_devices())
 #####################################################################
 
 yNames = ['FI'] # Names of ground truth features in input csv
+normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
 k = 10 # Number of folds in cross validation
 
 # For reproducible results set a seed
 seed = 0
 tf.random.set_seed(seed)
 
-normalizerLength = 20 # Number of random samples used for computation of mean and variance used in data normalisation 
 #####################################################################
 # Formatting and settings done automatically
 #####################################################################
@@ -83,6 +83,10 @@ kFold = int(args.parallel)
 
 # Sweep definition containing hyperparameters
 sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file, one for all repetitions hence [:-2]
+print(os.getcwd())
+print(sweepPath)
+os.listdir(os.getcwd())
+
 sweep_params = pd.read_csv(sweepPath)
 sweep_params = sweep_params.set_index('Index')
 params = sweep_params.loc[sweepIdx]
@@ -175,8 +179,6 @@ elif params['Dataset'] == 'MC24x': # MC24_extended dataset (4000 samples 224x224
   samplesPerFile = 40
   winKernel = 17
 
-
-
 elif params['Dataset'] == 'MC24_VarVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) variable Vf and random seed equivalent to the const Vf set
   trainDat_name = 'MatLabModel2024_100SamplesVfVariable' 
   sampleShape = [60,20]
@@ -205,7 +207,6 @@ elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 sa
 trainDat_path = os.path.join('datain',trainDat_name)
 numSamples = len(os.listdir(trainDat_path))*samplesPerFile # Number of data samples (i.e. TBDC specimens)
 batchSize = params['batchSize'] # Batch size for training
-# trainValRatio = params['trainValRatio'] # Training and validation data split ratio
 valSize = math.floor(params['valSize']*numSamples) # Training and validation data split ratio
 testSize = math.floor(params['testSize']*numSamples)
 train_length = numSamples-valSize-testSize # Number of training samples 
@@ -283,7 +284,6 @@ def load_all_samples(trainDat_path, numSamples):
 
 headers, samples = load_all_samples(trainDat_path, numSamples)
 
-# samples = samples.shuffle(buffer_size=len(samples)) # Shuffle set
 
 # Split into training and validation datasets using k-fold
 valIdx = int((kFold-1)*(numSamples/k)) # The k fold variable is 1-indexed, valIdx marks the start of the validation set in this fold
@@ -301,24 +301,23 @@ if valIdx>0:
   train_ds = train1.concatenate(train2)
 else:
    train_ds = train2
-# if testSize > 0:
-#   test_ds = remaining.skip(valSize)
-
+if testSize > 0:
+  test_ds = remaining.skip(valSize)
 
 # Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
-train_ds_eval = train_ds.batch(batchSize)
-val_ds_eval = val_ds.batch(batchSize)
-# if testSize > 0:
-#   test_ds_eval = test_ds.batch(batchSize)
+train_ds_eval = train_ds.batch(batchSize).cache()
+val_ds_eval = val_ds.batch(batchSize).cache()
+if testSize > 0:
+  test_ds_eval = test_ds.batch(batchSize).cache()
 
 X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
-# if testSize > 0:
-# X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+if testSize > 0:
+  X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 y_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 y_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
-# if testSize > 0:
-# y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+if testSize > 0:
+  y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 
 
 # Define mean and variance for normalization based only on training set
@@ -350,21 +349,18 @@ if params['dsAugmentation'] == 1:
   train_ds = train_ds.map(Augment())
 train_ds = train_ds.batch(batchSize) # Batch
 train_ds = train_ds.repeat() # Repeats dataset indefinitely to avoid errors
-# 04.04.2025 Thids augmentation method does not work as augmentations are only applied to features and not labels
-# if params['dsAugmentation'] == 1: # We can apply dataset augmentation to effectively increase the size of the dataset
-#    train_ds = train_ds.map(lambda x,y: augmentImage(x,y)) # Here x and y are input images and ground truth
 train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Validation dataset preprocessing
+# Validation preprocessing
 val_ds = val_ds.cache() # cache dataset for it to be used over iterations
-val_ds = val_ds.shuffle(buffer_size = len(val_ds)).batch(batchSize)
+val_ds = val_ds.batch(batchSize) # Batch
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Get shapes for later use
-train_in_shape = X_trainShape
-val_in_shape = X_valShape
-train_out_shape = y_trainShape
-val_out_shape = y_valShape
+# Test preprocessing
+test_ds = test_ds.cache() # cache dataset for it to be used over iterations
+# test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+test_ds = test_ds.batch(batchSize) # Batch
+test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 
 #####################################################################
@@ -405,10 +401,6 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
-  # This augmentation method only applies to the features and not the labels
-  # if params['dsAugmentation'] == 1:
-  #   x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
-
 
   x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
@@ -492,6 +484,13 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                 x = tf.keras.layers.Conv2DTranspose(filters = 256, kernel_size = (int(params['layer5Kernel']),int(params['layer5Kernel'])),  padding='same',activation=temp_activation)(x)
                 if params['skipConnections'] == 1:
                   x = tf.keras.layers.Concatenate()([x, encoder4])
+            
+            
+            if params['type'] == 'dense':
+              y = tf.keras.layers.Flatten()(x)
+              y = tf.keras.layers.Dense(64, activation='relu')(y)
+              y = tf.keras.layers.Dense(outputShape[0]*outputShape[1])(y)
+              y = tf.keras.layers.Reshape(outputShape)(y)
 
             if params['ActivationUp'] == 0:
                 temp_activation = 'linear'
@@ -522,83 +521,394 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
   x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',activation='linear')(x)
 
-  output = x
+  if params['type'] == 'dense': # For the dense model we jsut pull the output y
+     output = y
+  else:
+    output = x
 
   model = tf.keras.Model(inputs=input, outputs=output) # Create model
-
-  # Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
-  lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=params['initial_lr'],
-    decay_steps=steps_per_epoch*epochs,
-    decay_rate=params['lr_decay_rate'])
-
-  # Custom loss function which attributes more importance to higher values of failure index
-  d_loss = 1 # Parameter to alter the importance of higher y_true values
-  def custom_loss(y_true,y_pred):
-    SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
-    loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),d_loss))))
-    loss = tf.reduce_mean(loss)
-    return loss
-  
-#   Loss functions can be swept
-  if params['loss'] == 'MSE':
-    lossfunc = tf.keras.losses.MeanSquaredError()
-  elif params['loss'] == 'MAE':
-    lossfunc = tf.keras.losses.MeanAbsoluteError()
-  elif params['loss'] == 'Custom':
-    lossfunc = custom_loss
-
-  # Additional metrics to computes
-  def SSIM_metric(y_true, y_pred):
-    y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
-    # squared_difference = tf.keras.ops.square(y_true - y_pred)
-    # return tf.keras.ops.mean(squared_difference)  # Note the `axis=-1`
-      
-    return tf.reduce_mean(tf.image.ssim(
-    img1 = y_true,
-    img2 = y_pred,
-    max_val = 1,
-    filter_size=winKernel,
-    filter_sigma=1.5,
-    k1=0.01,
-    k2=0.03,
-    return_index_map=False
-    )   )
-
-  # Compile model with the optimizer in the sweep definition
-  if params['optimizer'] == 'Adadelta':
-     model.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-  elif params['optimizer'] == 'Nadam':
-     model.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-  else:
-     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
-              loss=lossfunc, 
-              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
-
   return model
 
+# %% Additional metrics to computes
+def SSIM_metric(y_true, y_pred):
+  y_pred = tf.cast(y_pred, tf.float32) # y_pred is in a different type, recast
+    
+  return tf.reduce_mean(tf.image.ssim(
+  img1 = y_true,
+  img2 = y_pred,
+  max_val = 1,
+  filter_size=winKernel,
+  filter_sigma=1.5,
+  k1=0.01,
+  k2=0.03,
+  return_index_map=False
+  )   )
+
+# Default initial learning rate is 0.001. If the the decay rate is 1 this will be held constant.
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+  initial_learning_rate=params['initial_lr'],
+  decay_steps=steps_per_epoch*epochs,
+  decay_rate=params['lr_decay_rate'])
+
+def custom_loss(y_true,y_pred):
+  SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+  loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.nn.relu(y_true))))
+  loss = tf.reduce_mean(loss)
+  return loss
+
+def custom_loss5(y_true,y_pred):
+  SE_base = tf.math.square(tf.math.subtract(y_true,y_pred))
+  loss = tf.math.multiply(SE_base,(tf.math.add(tf.constant(1,dtype=tf.float32),tf.math.multiply(tf.nn.relu(y_true),5))))
+  loss = tf.reduce_mean(loss)
+  return loss
+
+def peak_loss(y_true,y_pred):
+  peakVal = tf.reduce_max(y_true, keepdims=True)
+  cond = tf.equal(y_true, peakVal)
+  # peakLoc = tf.where(cond)
+  # peakLoc_1d = tf.squeeze(peakLoc)
+  errorGrid = tf.math.subtract(y_true,y_pred)
+  zeroGrid = tf.math.subtract(y_true,y_true) # Grid of zeros so we only get loss in peak location
+  # peakPred = y_pred[peakLoc_1d.numpy()[0]]
+  # peakPred = tf.slice(y_pred, peakLoc, [1,1])
+  loss = tf.where(cond, errorGrid, zeroGrid)
+  loss = tf.reduce_mean(loss)
+
+  # loss = peakPred-peakVal
+  return loss
+
+#   Loss functions can be swept
+if params['loss'] == 'MSE':
+  lossfunc = tf.keras.losses.MeanSquaredError()
+elif params['loss'] == 'MAE':
+  lossfunc = tf.keras.losses.MeanAbsoluteError()
+elif params['loss'] == 'Custom':
+  lossfunc = custom_loss
+elif params['loss'] == 'Peak':
+  lossfunc = peak_loss
+elif params['loss'] == 'Custom5':
+  lossfunc = custom_loss5
+# %% Alternative model architectures
+# Architectures are often designed for minmax scaling of features between -1 and 1.
+# Data is passed normalised to mean 0 and std 1, which is close enough
+
+def Xception_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.Xception(
+      include_top=False,
+      weights=None,
+      input_tensor=None,
+      input_shape=inputShape,
+      pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def mobileNetV2_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.MobileNetV2(
+      include_top=False,
+      weights=None,
+      input_tensor=None,
+      input_shape=inputShape,
+      pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def VGG16_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.VGG16(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ResNet50_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ResNet50(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ResNet50V2_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ResNet50V2(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def InceptionV3_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.InceptionV3(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def InceptionResNetV2_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.InceptionResNetV2(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def DenseNet121_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.DenseNet121(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def NASNetMobile_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.NASNetMobile(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def EfficientNetV2S_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2S(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def EfficientNetV2M_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2M(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def EfficientNetV2L_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.EfficientNetV2L(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def ConvNeXtTiny_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtTiny(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ConvNeXtSmall_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtSmall(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+def ConvNeXtLarge_Model(inputShape): # Expects scaled inputs in range -1 to 1
+  input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+  
+  base_model = tf.keras.applications.ConvNeXtLarge(
+    include_top=False,
+    weights=None,
+    input_tensor=None,
+    input_shape=inputShape,
+    pooling=None,
+    include_preprocessing=False,
+  )
+  x = base_model(inputs = input)
+  return input, x
+
+
+def applyDecoder(input, x, outputShape, params):
+  bnShape = x.shape # bottleneck
+  inShape = bnShape[1] # assuming square
+  outShape = outputShape[1]
+  # strides = range(1,inShape+1) # Acceptable strides
+  # kernels = range(1,inShape+1) # Acceptable kernel sizes
+  # padding = range(1,inShape+1) # Acceptable padding sizes
+  # combinations = []
+  # for k in kernels:
+  #    for s in strides:
+  #       for p in padding:
+  #         if s*(inShape-1)+k-2*p == outShape:
+  #           combinations += [k,s]
+  s = int(outShape/inShape) # Should be 32 (stride)
+  pd = "same"
+  if inShape == 5: # Need to upsamples to 7x7 for correct inverse conv
+    x = tf.keras.layers.Resizing(
+    height = 7,
+    width = 7,
+    interpolation='bilinear',
+    crop_to_aspect_ratio=False,
+    )(x)
+
+    s = int(outShape/7)
+
+  outputs = tf.keras.layers.Conv2DTranspose(filters = 1, # One filter for one output channel
+                                      kernel_size = 3,
+                                      strides = s,
+                                      padding = pd)(x)
+  
+  model = tf.keras.Model(input, outputs)
+  return model
+
+def TBDCNet_UNet(inputShape, outputShape, params):
+   '''
+  This function returns a UNet model based on the hyperparameters in the
+  sweep definition
+  
+
+  Args
+  ----------
+  inputShape: the input image shape
+  outputShape: the prediction image shape (currently unused)
+  params: The hyperparameters for the given sweep index
+
+  Returns
+  ----------
+  model: tensorflow model
+
+  '''
+   def double_convBlock(x,filters, params): # Convolutional block
+      x = tf.keras.layers.Conv2D(filters, kernel_size = 3, strides = 1, padding = "same", activation = "relu", kernel_initializer = "glorot_uniform")(x)
+      x = tf.keras.layers.Conv2D(filters, kernel_size = 3, strides = 1, padding = "same", activation = "relu", kernel_initializer = "glorot_uniform")(x)
+      return x
+   
+
+   def downSamplingBlock(x,filters, params): # Downsampling block in the encoder
+      skip = double_convBlock(x, filters, params)
+      x = tf.keras.layers.MaxPool2D(2)(skip)
+      x = tf.keras.layers.Dropout(params['dropout'])(x)
+      return skip,x
+   
+   def upSamplingBlock(x,skip,filters, params): # Upsampling block in the decoder
+      x = tf.keras.layers.Conv2DTranspose(filters, kernel_size = 3, strides = 2, padding="same")(x)
+      x = tf.keras.layers.concatenate([x, skip]) # Skip connection
+      x = tf.keras.layers.Dropout(params['dropout'])(x)
+      x = double_convBlock(x, filters, params)
+      return x
+
+
+   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
+   x = normalizer(input)
+   if params['dsAugmentation'] == 1:
+    x = tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=seed)(x)
+
+   # Encoder
+   skip1, x1 = downSamplingBlock(x, 64, params)
+   skip2, x2 = downSamplingBlock(x1, 128, params)
+   skip3, x3 = downSamplingBlock(x2, 256, params)
+   skip4, x4 = downSamplingBlock(x3, 512, params)
+
+   # Bottlenexk
+  
+   bottleneck = double_convBlock(x4, 1024, params)
+
+   # Decoder
+
+   u6 = upSamplingBlock(bottleneck, skip4, 512, params)
+   u7 = upSamplingBlock(u6, skip3, 256, params)
+   u8 = upSamplingBlock(u7, skip2, 128, params)
+   u9 = upSamplingBlock(u8, skip1, 64, params)
+
+   # Final layer
+   outputs = tf.keras.layers.Conv2D(1, 3, padding="same", activation = "linear")(u9)
+   # unet model with Keras Functional API
+   unet_model = tf.keras.Model(input, outputs, name="U-Net")
+
+   return unet_model
 #####################################################################
 # Training callbacks
 #####################################################################
 
 # Checkpoints to allow saving best model at various points
-# checkpoint_path = 'training_checkpoints_{jn}_{num}/cp.ckpt'.format(jn=args.jobname, num = args.parallel)
-checkpoint_path = 'epoch-{epoch:02d}.weights.h5'
+checkpoint_path = 'epoch-{epoch:04d}.weights.h5'
 checkpoint_dir = 'training_checkpoints_{jn}_{num}'.format(jn=args.jobname, num = args.parallel)
 cpLoadName = 'model.weights.h5' # The name of the checkpoint with the best weights at the end of training
 
-# checkpoint_dir = os.path.dirname(checkpoint_path)
 
 try:
-  os.mkdir(checkpoint_dir) # Make checkpoint directory if it doesn't already exist
+  os.mkdir(checkpoint_dir) # Make checkpoint directory
 except:
-  pass # Could be coded better but we don't want the sweep to fail due to issues on the HPC with mkdir
-
-# Save best weights to checkpoint based on only validation loss
+  pass
 
 cp_savepath = os.path.join(checkpoint_dir,checkpoint_path)
 
@@ -641,11 +951,6 @@ class timecallback(tf.keras.callbacks.Callback):
         # Return the list of epoch times as a numpy array
         return np.array(self.times)     
 
-tf.keras.callbacks.ModelCheckpoint(filepath=cp_savepath,
-                                                 save_weights_only=True,
-                                                 save_best_only = True,
-                                                 monitor = 'val_loss',
-                                                 verbose=1)
 
 # Early stopping callback which monitors improvements and stops training if
 # it stagnates.
@@ -656,10 +961,8 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
     verbose=1, # Records message when earlystopping
     mode='auto',
     baseline=None, 
-    restore_best_weights=False # Do not restore best weights after early stopping, 
-                               # we do this manually to allow recording of the full training history and identify overfitting etc.
+    restore_best_weights=False # Do not restore best weights after early stopping, we do this manually to allow recording of the full training history
 )
-
 #####################################################################
 # Model instantiation
 #####################################################################
@@ -667,8 +970,63 @@ early_stopping_monitor = tf.keras.callbacks.EarlyStopping(
 tf.keras.backend.clear_session() # Clear the state and frees up memory
 
 # CNN Model creation
-CNNModel = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
 
+match params['type']:
+  case 'Xception':
+      input, output = Xception_Model(inputShape = X_trainShape[1:])
+  case 'MobileNetV2':
+      input, output = mobileNetV2_Model(inputShape = X_trainShape[1:])
+  case 'VGG16':
+      input, output = VGG16_Model(inputShape = X_trainShape[1:])
+  case 'ResNet50':
+      input, output = ResNet50_Model(inputShape = X_trainShape[1:])
+  case 'ResNet50V2':
+      input, output = ResNet50V2_Model(inputShape = X_trainShape[1:])
+  case 'InceptionV3':
+      input, output = InceptionV3_Model(inputShape = X_trainShape[1:])
+  case 'InceptionResNetV2':
+      input, output = InceptionResNetV2_Model(inputShape = X_trainShape[1:])
+  case 'DenseNet121':
+      input, output = DenseNet121_Model(inputShape = X_trainShape[1:])
+  case 'NASNetMobile':
+      input, output = NASNetMobile_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2S':
+      input, output = EfficientNetV2S_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2M':
+      input, output = EfficientNetV2M_Model(inputShape = X_trainShape[1:])
+  case 'EfficientNetV2L':
+      input, output = EfficientNetV2L_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtTiny':
+      input, output = ConvNeXtTiny_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtSmall':
+      input, output = ConvNeXtSmall_Model(inputShape = X_trainShape[1:])
+  case 'ConvNeXtLarge':
+      input, output = ConvNeXtLarge_Model(inputShape = X_trainShape[1:])
+  case 'UNet':
+      CNNModel = TBDCNet_UNet(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+  case 'default':
+      CNNModel = TBDCNet_modelCNN(inputShape = X_trainShape[1:], outputShape = y_trainShape[1:], params = params)
+
+def preModel_compile(CNNModel):
+  # Compile model with the optimizer in the sweep definition
+  if params['optimizer'] == 'Adadelta':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adadelta(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  elif params['optimizer'] == 'Nadam':
+      CNNModel.compile(optimizer=tf.keras.optimizers.Nadam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  else:
+      CNNModel.compile(optimizer=tf.keras.optimizers.Adam(learning_rate = lr_schedule,epsilon = params['epsilon']), # Compile
+              loss=lossfunc, 
+              metrics=['mean_absolute_error','mean_squared_error', SSIM_metric])
+  return CNNModel
+
+if not params['type'] == 'default':
+   if not params['type'] == 'UNet':
+    CNNModel = applyDecoder(input, output, outputShape = y_trainShape[1:], params = params)
+CNNModel = preModel_compile(CNNModel)
 CNNModel.summary()
 
 modelCNNname = 'CNNModel1'
@@ -699,6 +1057,8 @@ trainingHist = modelCNN_history.history # save training history
 trainingHist.update(epoch_times) # Add training time to history
 
 CNNModel.load_weights(os.path.join(checkpoint_dir,cpLoadName)) # load best model weights
+
+
 train_results = CNNModel.evaluate(
     x=train_ds_eval,
     y=None,
@@ -726,74 +1086,27 @@ val_results = CNNModel.evaluate(
 val_results = pd.DataFrame.from_dict(val_results, orient='index',
                        columns=['val']).T
 
+if testSize > 0:
+  test_results = CNNModel.evaluate(
+      x=test_ds_eval,
+      y=None,
+      batch_size=None,
+      verbose='auto',
+      sample_weight=None,
+      steps=None,
+      callbacks=None,
+      return_dict=True
+  )
 
-# test_results = CNNModel.evaluate(
-#     x=test_ds_eval,
-#     y=None,
-#     batch_size=None,
-#     verbose='auto',
-#     sample_weight=None,
-#     steps=None,
-#     callbacks=None,
-#     return_dict=True
-# )
-
-# test_results = pd.DataFrame.from_dict(test_results, orient='index',
-#                        columns=['test']).T
-
-results = pd.concat([train_results, val_results])
-
-# predCNN = CNNModel.predict(X_train) # Make prediction
-# predCNN_val = CNNModel.predict(X_val) # Prediction of only validation data
-# predCNNShape = predCNN.shape
-# predCNN_valShape = predCNN_val.shape
-
-# # Inverse scaling
-# if params['standardisation'] == 0:
-#    predCNN_invStandard = predCNN
-#    predCNN_val_invStandard = predCNN_val
-#    ground_truth_invStandard = y_train
-#    ground_truth_val_invStandard = y_val
-# else:
-#    predCNN_invStandard = Yscaler.inverse_transform(predCNN.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-#    predCNN_invStandard = predCNN_invStandard.reshape(predCNNShape)
-#    predCNN_val_invStandard = Yscaler.inverse_transform(predCNN_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-#    predCNN_val_invStandard = predCNN_val_invStandard.reshape(predCNN_valShape)
-   
-#    ground_truth_invStandard =  Yscaler.inverse_transform(y_train.reshape(y_train.shape[0]*y_train.shape[1]*y_train.shape[2],-1))
-#    ground_truth_invStandard = ground_truth_invStandard.reshape(y_trainShape)
-#    ground_truth_val_invStandard = Yscaler.inverse_transform(y_val.reshape(y_val.shape[0]*y_val.shape[1]*y_val.shape[2],-1))
-#    ground_truth_val_invStandard = ground_truth_val_invStandard.reshape(y_valShape)
-
-# RMSE calculation for both training and validation
-# RMSE = tf.keras.metrics.RootMeanSquaredError()
-# RMSE.update_state(ground_truth_invStandard,predCNN_invStandard)
-# print('RMSE for training set = ' + str(RMSE.result().numpy()))
-# if ground_truth_val_invStandard is not None:
-#     RMSE_val = tf.keras.metrics.RootMeanSquaredError()
-#     RMSE_val.update_state(ground_truth_val_invStandard,predCNN_val_invStandard)
-#     print('RMSE for validation set  = ' + str(RMSE_val.result().numpy()))
-
-
-# Save outputs
-# inputDat = np.zeros(samples2D.shape)
-# for i in range(0,samples2D.shape[-1]): # Un-normalise all input features
-#     inputDat[:,:,:,i] = samples2D[:,:,:,i]
+  test_results = pd.DataFrame.from_dict(test_results, orient='index',
+                        columns=['test']).T
+  
+  results = pd.concat([train_results, val_results, test_results])
+else:
+  results = pd.concat([train_results, val_results])
 
 with open(histOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(trainingHist, f, indent=2)
-
-# with open(predOutPath, 'w') as f: # Dump data to json file at specified path
-#     json.dump(predCNN_invStandard.tolist(), f, indent=2)
-
-# with open(predOutPath_val, 'w') as f: # Dump data to json file at specified path
-#     json.dump(predCNN_val_invStandard.tolist(), f, indent=2)
-
-# with open(gtOutPath, 'w') as f: # Dump data to json file at specified path
-#     json.dump(ground_truth_invStandard.tolist(), f, indent=2)
-
-# with open(gtOutPath_val, 'w') as f: # Dump data to json file at specified path
-#     json.dump(ground_truth_val_invStandard.tolist(), f, indent=2)
 
 with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(params.to_json(), f, indent=2)
@@ -802,16 +1115,3 @@ with open(resultpath, 'w') as f: # Dump data to json file at specified path
     json.dump(results.to_json(), f, indent=2)
 
 CNNModel.save(modelOutPath)
-
-# with open(inputOutPath, 'w') as f: # Dump data to json file at specified path
-#     json.dump(inputDat.tolist(), f, indent=2)
-
-# with open(RMSEOutPath, 'w') as f: # Dump data to json file at specified path
-#     json.dump(RMSE.result().numpy().tolist(), f, indent=2)
-
-# with open(RMSEOutPath_val, 'w') as f: # Dump data to json file at specified path
-#     json.dump(RMSE_val.result().numpy().tolist(), f, indent=2)
-
-
-# Save the model
-# modelCNN.save(modelOutPath)
