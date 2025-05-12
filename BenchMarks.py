@@ -200,7 +200,7 @@ train_length = numSamples-valSize-testSize # Number of training samples
 epochs = params['Epochs'] # Max epochs for training
 # epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
-validation_steps = valSize // batchSize
+validation_steps = valSize // batchSize # Not used anymore, I want to run full validation set in one go
 
 
 # Load data  
@@ -274,19 +274,23 @@ samples = samples.shuffle(buffer_size=len(samples), seed=seed) # Shuffle set
 train_ds = samples.take(train_length)
 remaining = samples.skip(train_length)
 val_ds = remaining.take(valSize)
-test_ds = remaining.skip(valSize)
+if testSize > 0:
+  test_ds = remaining.skip(valSize)
 
 # Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
 train_ds_eval = train_ds.batch(batchSize).cache()
 val_ds_eval = val_ds.batch(batchSize).cache()
-test_ds_eval = test_ds.batch(batchSize).cache()
+if testSize > 0:
+  test_ds_eval = test_ds.batch(batchSize).cache()
 
 X_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 X_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
-X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
+if testSize > 0:
+  X_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(xNames))
 y_trainShape = (train_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 y_valShape = (val_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
-y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
+if testSize > 0:
+  y_testShape = (test_ds.cardinality().numpy().item(),sampleShape[0],sampleShape[1],len(yNames))
 
 
 # Define mean and variance for normalization based only on training set
@@ -326,10 +330,11 @@ val_ds = val_ds.batch(batchSize) # Batch
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 # Test preprocessing
-test_ds = test_ds.cache() # cache dataset for it to be used over iterations
-# test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
-test_ds = test_ds.batch(batchSize) # Batch
-test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+if testSize > 0:
+  test_ds = test_ds.cache() # cache dataset for it to be used over iterations
+  # test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+  test_ds = test_ds.batch(batchSize) # Batch
+  test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 
 #####################################################################
@@ -1010,9 +1015,10 @@ modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
                                 steps_per_epoch=steps_per_epoch,
                                 validation_data=val_ds,
-                                validation_steps = validation_steps,
                                 callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
                                 )
+
+# NOT USING validation_steps = validation_steps, as this is not needed for the validation dataset
 
 # Get the recorded epoch times after training is complete
 epoch_times = {'trainTime':time_callback_ins.get_epoch_times().tolist()}
@@ -1055,22 +1061,24 @@ val_results = CNNModel.evaluate(
 val_results = pd.DataFrame.from_dict(val_results, orient='index',
                        columns=['val']).T
 
+if testSize > 0:
+  test_results = CNNModel.evaluate(
+      x=test_ds_eval,
+      y=None,
+      batch_size=None,
+      verbose='auto',
+      sample_weight=None,
+      steps=None,
+      callbacks=None,
+      return_dict=True
+  )
 
-test_results = CNNModel.evaluate(
-    x=test_ds_eval,
-    y=None,
-    batch_size=None,
-    verbose='auto',
-    sample_weight=None,
-    steps=None,
-    callbacks=None,
-    return_dict=True
-)
-
-test_results = pd.DataFrame.from_dict(test_results, orient='index',
-                       columns=['test']).T
-
-results = pd.concat([train_results, val_results, test_results])
+  test_results = pd.DataFrame.from_dict(test_results, orient='index',
+                        columns=['test']).T
+  
+  results = pd.concat([train_results, val_results, test_results])
+else:
+  results = pd.concat([train_results, val_results])
 
 
 #%% Save outputs

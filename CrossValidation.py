@@ -212,7 +212,7 @@ testSize = math.floor(params['testSize']*numSamples)
 train_length = numSamples-valSize-testSize # Number of training samples 
 epochs = params['Epochs'] # Max epochs for training
 steps_per_epoch = train_length // batchSize
-validation_steps = valSize // batchSize
+validation_steps = valSize // batchSize # Not used anymore, I want to run full validation set in one go
 
 
 
@@ -356,11 +356,12 @@ val_ds = val_ds.cache() # cache dataset for it to be used over iterations
 val_ds = val_ds.batch(batchSize) # Batch
 val_ds = val_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
-# Test preprocessing
-test_ds = test_ds.cache() # cache dataset for it to be used over iterations
-# test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
-test_ds = test_ds.batch(batchSize) # Batch
-test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
+if testSize > 0:
+  # Test preprocessing
+  test_ds = test_ds.cache() # cache dataset for it to be used over iterations
+  # test_ds = test_ds.shuffle(buffer_size = len(test_ds)).batch(batchSize)
+  test_ds = test_ds.batch(batchSize) # Batch
+  test_ds = test_ds.prefetch(buffer_size=tf.data.AUTOTUNE) # Allows prefetching of elements while later elements are prepared
 
 
 #####################################################################
@@ -1041,9 +1042,10 @@ modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
                                 steps_per_epoch=steps_per_epoch,
                                 validation_data=val_ds,
-                                validation_steps = validation_steps,
                                 callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
                                 )
+
+# NOT USING validation_steps = validation_steps, as this is not needed for the validation dataset
 
 # Get the recorded epoch times after training is complete
 epoch_times = {'trainTime':time_callback_ins.get_epoch_times().tolist()}
