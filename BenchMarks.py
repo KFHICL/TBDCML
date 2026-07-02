@@ -55,6 +55,9 @@ normalizerLength = 20 # Number of random samples used for computation of mean an
 
 # For reproducible results set a seed
 seed = 0
+os.environ['PYTHONHASHSEED'] = str(seed)
+random.seed(seed)
+np.random.seed(seed)
 tf.random.set_seed(seed)
 
 #####################################################################
@@ -101,6 +104,8 @@ RMSEOutPath_val = 'RMSE_val_{jn}_{num}.json'.format(jn=args.jobname, num = args.
 RMSEOutPath_val = os.path.join('dataout',RMSEOutPath_val)
 resultpath = 'results_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel)
 resultpath = os.path.join('dataout',resultpath)
+samplepath = 'samples_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel)
+samplepath = os.path.join('dataout',samplepath)
 
 # Dataset selection
 if params['Dataset'] == 'LFC18': # ABAQUS DATA FROM GAUDRON2018
@@ -190,6 +195,18 @@ elif params['Dataset'] == 'MC24_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 sa
   samplesPerFile = 1
   winKernel = 7
 
+elif params['Dataset'] == 'MC24_1000_ConstVf': # MECOMPOSITES MODEL FROM 2024 (100 samples) constant Vf 
+  trainDat_name = 'MatLabModel2024_1000SamplesVfConstant' 
+  sampleShape = [60,20]
+  if params['MC24_Features'] == 'Stiffness':
+    xNames = ['Ex','Ey','Gxy'] # Use stiffnesses (default)
+  elif params['MC24_Features'] == 'Vf_c2':
+    xNames = ['Vf','c2'] # Use fibre volume fraction and orientation distribution
+  elif params['MC24_Features'] == 'All':
+     xNames = ['Ex','Ey','Gxy','Vf','c2'] # Use all available features
+  samplesPerFile = 1
+  winKernel = 7
+
 # Various settings
 trainDat_path = os.path.join('datain',trainDat_name)
 numSamples = len(os.listdir(trainDat_path))*samplesPerFile # Number of data samples (i.e. TBDC specimens)
@@ -198,12 +215,11 @@ valSize = math.floor(params['valSize']*numSamples) # Training and validation dat
 testSize = math.floor(params['testSize']*numSamples)
 train_length = numSamples-valSize-testSize # Number of training samples 
 epochs = params['Epochs'] # Max epochs for training
-# epochs = 500 # Max epochs for training
 steps_per_epoch = train_length // batchSize
 validation_steps = valSize // batchSize # Not used anymore, I want to run full validation set in one go
 
 
-# Load data  
+# Load data 
 def loadSampleNew(path):
     # Assuming loadSample uses pandas to read the CSV file
     # Adjust the delimiter and header options as needed
@@ -236,7 +252,13 @@ def loadSampleNew(path):
     Y = samples[:,:,:,gtIdx] # Labels
     X = np.asarray(X).astype('float32')
     Y = np.asarray(Y).astype('float32')
-    ds = tf.data.Dataset.from_tensor_slices((X, Y))
+
+    # Save sample IDs to know what is val, train, test
+    base_id = os.path.basename(path).replace('.', '_')  # filename-based prefix
+    sample_ids = [f"{base_id}_{i}" for i in range(X.shape[0])]
+
+    # ds = tf.data.Dataset.from_tensor_slices((X, Y))
+    ds = tf.data.Dataset.from_tensor_slices((X, Y, sample_ids))
     
 
     if "coordinates" in headers: 
@@ -270,12 +292,32 @@ def load_all_samples(trainDat_path, numSamples):
 headers, samples = load_all_samples(trainDat_path, numSamples)
 
 
-samples = samples.shuffle(buffer_size=len(samples), seed=seed) # Shuffle set
+samples = samples.shuffle(buffer_size=len(samples), seed=seed, reshuffle_each_iteration=False) # Shuffle set
 train_ds = samples.take(train_length)
 remaining = samples.skip(train_length)
 val_ds = remaining.take(valSize)
 if testSize > 0:
   test_ds = remaining.skip(valSize)
+
+# Extract sample IDs before dropping them, for later comparison
+def get_sample_ids(dataset):
+  ids = []
+  for _, _, sample_id in dataset.as_numpy_iterator():
+    ids.append(sample_id.decode() if isinstance(sample_id, bytes) else sample_id)
+  return ids
+
+train_sample_ids = get_sample_ids(train_ds)
+val_sample_ids = get_sample_ids(val_ds)
+test_sample_ids = get_sample_ids(test_ds) if testSize > 0 else []
+
+# Remove sample IDs from datasets (keep only X, Y)
+def drop_sample_ids(dataset):
+  return dataset.map(lambda x, y, _: (x, y))
+
+train_ds = drop_sample_ids(train_ds)
+val_ds = drop_sample_ids(val_ds)
+if testSize > 0:
+  test_ds = drop_sample_ids(test_ds)
 
 # Take a copy of the datasets for RMSE evaluation at the end before repeat and shuffling is passed
 train_ds_eval = train_ds.batch(batchSize).cache()
@@ -341,6 +383,12 @@ if testSize > 0:
 # CNN Model definition
 #####################################################################
 
+def get_padding_shape(height, width, multiple=32): # Can do up to 4 levels of downsampling with 64x32 images
+    pad_h = (multiple - height % multiple) % multiple
+    pad_w = (multiple - width % multiple) % multiple
+    return ((pad_h // 2, pad_h - pad_h // 2),
+            (pad_w // 2, pad_w - pad_w // 2))
+
 def TBDCNet_modelCNN(inputShape, outputShape, params):
   '''
   This function returns a model based on the hyperparameters in the
@@ -376,43 +424,60 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
   input = tf.keras.layers.Input(shape=inputShape) # Shape (Long, short, inputs)
   x = normalizer(input)
 
-  x = tf.keras.layers.Conv2D(filters = 32, kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+  if (params['downSample'] == 1 and params['pooling'] == 1): # If we downSample in the network we need to ensure it is a suitable size
+    pad = get_padding_shape(inputShape[0], inputShape[1])
+    x = tf.keras.layers.ZeroPadding2D(padding=(pad))(x)
+
+
+  x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 32), kernel_size=(int(params['layer1Kernel']), int(params['layer1Kernel'])),activation=params['conv1Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
   if params['batchNorm'] == 1:
     x = tf.keras.layers.BatchNormalization()(x)
   if params['pooling'] == 1:
-    x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+    if params['downSample'] == 1:
+       x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+    else:
+       x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
   if params['dropout'] > 0:
     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
   encoder1 = x # Use this if skip connections need to be used
 
 
   if params['layer2'] == 1:
-    x = tf.keras.layers.Conv2D(filters = 64, kernel_size=(int(params['layer2Kernel']), int(params['layer2Kernel'])),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+    x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 64), kernel_size=(int(params['layer2Kernel']), int(params['layer2Kernel'])),activation=params['conv2Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
     if params['batchNorm'] == 1:
       x = tf.keras.layers.BatchNormalization()(x)
     if params['pooling'] == 1:
-       x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+      if params['downSample'] == 1:
+        x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+      else:
+        x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
     if params['dropout'] > 0:
        x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
     encoder2 = x
         
 
     if params['layer3'] == 1:
-        x = tf.keras.layers.Conv2D(filters = 128, kernel_size=(int(params['layer3Kernel']), int(params['layer3Kernel'])),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+        x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 128), kernel_size=(int(params['layer3Kernel']), int(params['layer3Kernel'])),activation=params['conv3Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
         if params['batchNorm'] == 1:
            x = tf.keras.layers.BatchNormalization()(x)
         if params['pooling'] == 1:
-           x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
+          if params['downSample'] == 1:
+            x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+          else:
+            x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
         if params['dropout'] > 0:
            x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
         encoder3 = x
 
 
         if params['layer4'] == 1:
-            x = tf.keras.layers.Conv2D(filters = 256, kernel_size=(int(params['layer4Kernel']), int(params['layer4Kernel'])),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+            x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 256), kernel_size=(int(params['layer4Kernel']), int(params['layer4Kernel'])),activation=params['conv4Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
             if params['batchNorm'] == 1:
                 x = tf.keras.layers.BatchNormalization()(x)
             if params['pooling'] == 1:
+              if params['downSample'] == 1:
+                x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+              else:
                 x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
             if params['dropout'] > 0:
                 x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
@@ -420,10 +485,13 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
 
             if params['layer5'] == 1:
-                x = tf.keras.layers.Conv2D(filters = 512, kernel_size=(int(params['layer5Kernel']), int(params['layer5Kernel'])),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 512), kernel_size=(int(params['layer5Kernel']), int(params['layer5Kernel'])),activation=params['conv5Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                 if params['batchNorm'] == 1:
                     x = tf.keras.layers.BatchNormalization()(x)
                 if params['pooling'] == 1:
+                  if params['downSample'] == 1:
+                    x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+                  else:
                     x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
                 if params['dropout'] > 0:
                     x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
@@ -431,10 +499,13 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
 
 
                 if params['layer6'] == 1:
-                    x = tf.keras.layers.Conv2D(filters = 1024, kernel_size=(int(params['layer6Kernel']), int(params['layer6Kernel'])),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
+                    x = tf.keras.layers.Conv2D(filters = int(params['filterScale'] * 1024), kernel_size=(int(params['layer6Kernel']), int(params['layer6Kernel'])),activation=params['conv6Activation'], data_format='channels_last', padding='same', kernel_regularizer=regularizer) (x)
                     if params['batchNorm'] == 1:
                         x = tf.keras.layers.BatchNormalization()(x)
                     if params['pooling'] == 1:
+                      if params['downSample'] == 1:
+                        x = tf.keras.layers.MaxPooling2D((2, 2), strides=2, padding='same')(x)
+                      else:
                         x = tf.keras.layers.MaxPooling2D((2, 2), strides=1, padding='same')(x)
                     if params['dropout'] > 0:
                         x = tf.keras.layers.SpatialDropout2D(rate = params['dropout'])(x)
@@ -445,7 +516,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                     else:
                        temp_activation = params['conv6Activation']
 
-                    x = tf.keras.layers.Conv2DTranspose(filters = 512, kernel_size = (int(params['layer6Kernel']),int(params['layer6Kernel'])),  padding='same',activation=temp_activation)(x)
+                    if (params['downSample'] == 1 and params['pooling'] == 1):
+                      x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 512), kernel_size = (int(params['layer6Kernel']),int(params['layer6Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+                    else:
+                      x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 512), kernel_size = (int(params['layer6Kernel']),int(params['layer6Kernel'])),  padding='same',activation=temp_activation)(x)
                     if params['skipConnections'] == 1:
                       x = tf.keras.layers.Concatenate()([x, encoder5])
 
@@ -455,7 +529,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
                 else:
                     temp_activation = params['conv5Activation']
 
-                x = tf.keras.layers.Conv2DTranspose(filters = 256, kernel_size = (int(params['layer5Kernel']),int(params['layer5Kernel'])),  padding='same',activation=temp_activation)(x)
+                if (params['downSample'] == 1 and params['pooling'] == 1):
+                  x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 256), kernel_size = (int(params['layer5Kernel']),int(params['layer5Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+                else:
+                  x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 256), kernel_size = (int(params['layer5Kernel']),int(params['layer5Kernel'])),  padding='same',activation=temp_activation)(x)
                 if params['skipConnections'] == 1:
                   x = tf.keras.layers.Concatenate()([x, encoder4])
             
@@ -471,7 +548,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
             else:
                 temp_activation = params['conv4Activation']
             
-            x = tf.keras.layers.Conv2DTranspose(filters = 128, kernel_size = (int(params['layer4Kernel']),int(params['layer4Kernel'])),  padding='same',activation=temp_activation)(x)
+            if (params['downSample'] == 1 and params['pooling'] == 1):
+              x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 128), kernel_size = (int(params['layer4Kernel']),int(params['layer4Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+            else:
+              x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 128), kernel_size = (int(params['layer4Kernel']),int(params['layer4Kernel'])),  padding='same',activation=temp_activation)(x)
             if params['skipConnections'] == 1:
               x = tf.keras.layers.Concatenate()([x, encoder3])
 
@@ -480,7 +560,10 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
         else:
             temp_activation = params['conv3Activation']
         
-        x = tf.keras.layers.Conv2DTranspose(filters = 64, kernel_size = (int(params['layer3Kernel']),int(params['layer3Kernel'])),  padding='same',activation=temp_activation)(x)
+        if (params['downSample'] == 1 and params['pooling'] == 1):
+          x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 64), kernel_size = (int(params['layer3Kernel']),int(params['layer3Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+        else:
+          x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 64), kernel_size = (int(params['layer3Kernel']),int(params['layer3Kernel'])),  padding='same',activation=temp_activation)(x)
         if params['skipConnections'] == 1:
           x = tf.keras.layers.Concatenate()([x, encoder2])
 
@@ -489,11 +572,26 @@ def TBDCNet_modelCNN(inputShape, outputShape, params):
     else:
         temp_activation = params['conv2Activation']
     
-    x = tf.keras.layers.Conv2DTranspose(filters = 32, kernel_size = (int(params['layer2Kernel']),int(params['layer2Kernel'])),  padding='same',activation=temp_activation)(x)
+    if (params['downSample'] == 1 and params['pooling'] == 1):
+      x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 32), kernel_size = (int(params['layer2Kernel']),int(params['layer2Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+    else:
+      x = tf.keras.layers.Conv2DTranspose(filters = int(params['filterScale'] * 32), kernel_size = (int(params['layer2Kernel']),int(params['layer2Kernel'])),  padding='same',activation=temp_activation)(x)
     if params['skipConnections'] == 1:
       x = tf.keras.layers.Concatenate()([x, encoder1])
 
-  x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',activation='linear')(x)
+  # if params['ActivationUp'] == 0:
+  #       temp_activation = 'linear'
+  # else:
+  #     temp_activation = params['conv1Activation']
+  temp_activation = 'linear' # Last activation should always be linear
+
+  if (params['downSample'] == 1 and params['pooling'] == 1):
+    x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  strides=2, padding='same',activation=temp_activation)(x)
+  else:
+    x = tf.keras.layers.Conv2DTranspose(filters = 1, kernel_size = (int(params['layer1Kernel']),int(params['layer1Kernel'])),  padding='same',activation=temp_activation)(x)
+
+  if (params['downSample'] == 1 and params['pooling'] == 1): # If we downSample in the network we need to ensure it is a suitable size
+     x = tf.keras.layers.Cropping2D(cropping=(pad))(x)
 
   if params['type'] == 'dense': # For the dense model we jsut pull the output y
      output = y
@@ -796,10 +894,19 @@ def applyDecoder(input, x, outputShape, params):
 
     s = int(outShape/7)
 
-  outputs = tf.keras.layers.Conv2DTranspose(filters = 1, # One filter for one output channel
-                                      kernel_size = 3,
-                                      strides = s,
-                                      padding = pd)(x)
+  x = tf.keras.layers.Conv2DTranspose(512, 3, strides=2, padding='same', activation='relu')(x)  # 14x14
+  x = tf.keras.layers.Conv2DTranspose(256, 3, strides=2, padding='same', activation='relu')(x)  # 28x28
+  x = tf.keras.layers.Conv2DTranspose(128, 3, strides=2, padding='same', activation='relu')(x)  # 56x56
+  x = tf.keras.layers.Conv2DTranspose(64, 3, strides=2, padding='same', activation='relu')(x)   # 112x112
+  x = tf.keras.layers.Conv2DTranspose(32, 3, strides=2, padding='same', activation='relu')(x)   # 224x224
+
+  outputs = tf.keras.layers.Conv2D(1, 1, activation='linear')(x)
+
+
+  # outputs = tf.keras.layers.Conv2DTranspose(filters = 1, # One filter for one output channel
+  #                                     kernel_size = 3,
+  #                                     strides = s,
+  #                                     padding = pd)(x)
   
   model = tf.keras.Model(input, outputs)
   return model
@@ -1013,7 +1120,7 @@ modelCNNname = 'CNNModel1'
 time_callback_ins = timecallback()
 modelCNN_history = CNNModel.fit(train_ds,
                                 epochs=epochs,
-                                steps_per_epoch=steps_per_epoch,
+                                steps_per_epoch=int(steps_per_epoch),
                                 validation_data=val_ds,
                                 callbacks=[early_stopping_monitor, cp_callback, cp_delete_callback(checkpoint_dir, cpLoadName), time_callback_ins]
                                 )
@@ -1042,7 +1149,7 @@ train_results = CNNModel.evaluate(
     sample_weight=None,
     steps=None,
     callbacks=None,
-    return_dict=True
+    return_dict=True,
 )
 
 train_results = pd.DataFrame.from_dict(train_results, orient='index',
@@ -1056,7 +1163,7 @@ val_results = CNNModel.evaluate(
     sample_weight=None,
     steps=None,
     callbacks=None,
-    return_dict=True
+    return_dict=True,
 )
 val_results = pd.DataFrame.from_dict(val_results, orient='index',
                        columns=['val']).T
@@ -1070,7 +1177,7 @@ if testSize > 0:
       sample_weight=None,
       steps=None,
       callbacks=None,
-      return_dict=True
+      return_dict=True,
   )
 
   test_results = pd.DataFrame.from_dict(test_results, orient='index',
@@ -1079,9 +1186,16 @@ if testSize > 0:
   results = pd.concat([train_results, val_results, test_results])
 else:
   results = pd.concat([train_results, val_results])
+results['RMSE'] = np.sqrt(results['mean_squared_error'])
+print(results)
 
-
-#%% Save outputs
+sample_ids = {
+  "train": train_sample_ids,
+  "val": val_sample_ids,
+  "test": test_sample_ids
+}
+with open(samplepath, 'w') as f:
+  json.dump(sample_ids, f, indent=2)
 
 with open(histOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(trainingHist, f, indent=2)

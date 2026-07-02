@@ -1,5 +1,6 @@
 #####################################################################
 # Description
+# Update 
 #####################################################################
 '''
 This script is used to manually generate figures from the results in 
@@ -53,7 +54,7 @@ import argparse
 # %% Settings
 plt.style.use("seaborn-v0_8-colorblind")
 sampleNum = 0
-
+loadAllSamp = False
 current_dir = os.path.dirname(os.path.abspath(__file__))
 while os.path.basename(current_dir) != "Individual Project":
     current_dir = os.path.dirname(current_dir)
@@ -115,7 +116,9 @@ for i,file in enumerate(os.listdir(MC24x_path)):
     else:
         addSamp = loadSamplex(filepath, xNames = MC24x_xNames, yNames = MC24x_yNames, sampleShape=MC24x_sampleShape)[1]
         MC24x_samples = samples.concatenate(addSamp)
-
+    if not loadAllSamp:
+        if i>=4: # Only load first 5 files (200 samples) to save time
+            break
 
 
 
@@ -342,27 +345,83 @@ for i in range(repeats): # For each repeat (1=indexed)
 # loaded_model = keras.models.load_model(modelPath)
 # %% FUnction for creating contour plot
 
-def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5):
+
+#   # Plot ground truth
+# im1 = ax.imshow(MC24x_plotSamp[:,:,tmp]/1000, cmap='viridis')
+# divider = make_axes_locatable(ax)
+# cax = divider.append_axes("right", size=0.07, pad=0.1)
+# cbar = plt.colorbar(im1, cax=cax)
+#   # cbar.set_label('Ground Truth FI')
+# ax.axis('off')
+# ax.set_anchor('C')  # Center the image in the axes
+# dx = scaleBarDx  # Assuming 50 units correspond to the full width of the image
+# scalebar = ScaleBar(dx, "mm", fixed_units="mm", fixed_value = 25,width_fraction=0.015*dx, box_alpha = 0,rotation ="vertical-only",bbox_to_anchor=(0, 1),bbox_transform=ax.transAxes)
+# ax.add_artist(scalebar)
+
+
+
+from matplotlib_scalebar.scalebar import ScaleBar
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+def plot_contour(grid, samples2D,  ax, xlab = None, ylab = None, cbarlab = None, cBarBins = 5,scaleBarDx = None):
     if np.min(samples2D) == np.max(samples2D):
          CS = ax.contourf(grid[0],grid[1],samples2D)
          cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
          cbar.ax.text(0.1, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
             va='top', ha='left')
-         cbar.set_label(cbarlab, rotation=270,labelpad=7)
+         cbar.set_label(cbarlab, rotation=270,labelpad=9)
     else:
-        CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
-        cbar = fig.colorbar(CS,ticks=[], shrink = 0.85)
-        cbar.ax.text(0.1, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
-            va='top', ha='left')
-        cbar.ax.text(0.1, 1.03, round(np.max(samples2D),2), transform=cbar.ax.transAxes, 
-            va='bottom', ha='left')
-        cbar.set_label(cbarlab, rotation=270,labelpad=7)
+        im1 = ax.imshow(samples2D, cmap='viridis')
+        # CS = ax.contourf(grid[0],grid[1],samples2D,levels=np.linspace(np.min(samples2D), np.max(samples2D), 10))
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size=0.1, pad=0.1)
+        cbar = plt.colorbar(im1, ticks=[], cax=cax, shrink=0.5)
+        # cbar = fig.colorbar(CS, ticks=[], cax=cax, shrink=0.5)
+        # cbar.ax.text(0.1, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
+        #     va='top', ha='left')
+        # cbar.ax.text(0.1, 1.03, round(np.max(samples2D),2), transform=cbar.ax.transAxes, 
+        #     va='bottom', ha='left')
+        cbar.ax.text(0.5, -0.03, round(np.min(samples2D),2), transform=cbar.ax.transAxes, 
+            va='top', ha='center')
+        cbar.ax.text(0.5, 1.03, round(np.max(samples2D),2), transform=cbar.ax.transAxes, 
+            va='bottom', ha='center')
+        # fig.subplots_adjust(right=0.88)
+        cbar.ax.text(1, 0.5, cbarlab, transform=cbar.ax.transAxes, 
+            rotation=270, va='center', ha='left')
+        # cbar.set_label(cbarlab, rotation=270,labelpad=14)
+        # cbar.ax.yaxis.set_label_position('right')
     
     plt.ylabel(ylab)
     plt.title(xlab)
     # plt.xlabel(xlab)
     ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.NullLocator())
+    ax.set_aspect('equal', 'box')
+    # Add a scale bar
+    if scaleBarDx is not None:
+        # scalebarLoc = [np.min(grid[0])+10, np.max(grid[1])+5]  # Top left corner
+        scalebar_length = 25  # Adjust this value to match the scale of your data
+        # Create scale bar
+
+        # dx = sampleWidths[i]/ground_truths[i].shape[1]  # Assuming 50 units correspond to the full width of the image
+        # dx = 1
+        # scalebar = ScaleBar(dx, "mm", fixed_units="mm", fixed_value = 25,width_fraction=0.015*dx, box_alpha = 0,rotation ="vertical-only",bbox_to_anchor=(0, 1),bbox_transform=axes[i, 0].transAxes)
+        scalebar = ScaleBar(scaleBarDx, "mm", fixed_units="mm", fixed_value = 25,width_fraction=0.015*scaleBarDx, box_alpha = 0,rotation ="vertical-only",bbox_to_anchor=(0, 1),bbox_transform=ax.transAxes)
+        ax.add_artist(scalebar)
+
+        # # Draw a white rectangle underneath the scale bar and text
+        # rect = matplotlib.patches.Rectangle(
+        #     (scalebarLoc[0] - 10, scalebarLoc[1] +2),
+        #     scalebarLoc[0]+scalebar_length + 10, - 10,
+        #     transform=ax.transData,
+        #     color='white',
+        #     alpha=0.5,
+        #     zorder=1
+        # )
+        # ax.add_patch(rect)
+
+        # Draw the scale bar and text in black
+        # ax.plot([scalebarLoc[0], scalebarLoc[0] + scalebar_length], [scalebarLoc[1], scalebarLoc[1]], color='black', lw=2, transform=ax.transData, clip_on=False, zorder=2)
+        # ax.text(scalebarLoc[0] + scalebar_length / 2, scalebarLoc[1] + 2, f'{scalebar_length} mm', ha='center', va='bottom', fontsize=8, transform=ax.transData, color="black", zorder=2)
     # cbar = fig.colorbar(CS,ticks=[np.min(samples2D), np.max(samples2D)], shrink = 0.8)
     
     # cbar.ax.locator_params(nbins=cBarBins)
@@ -378,7 +437,7 @@ matplotlib.rcParams["font.family"] = "Arial"
 matplotlib.rcParams['axes.linewidth'] = 0.25
 plt.rc('axes', axisbelow=True)
 # matplotlib.rcParams["mathtext.fontset"] = 'stixsans'
-plt.rcParams["font.size"] = "4"
+plt.rcParams["font.size"] = "8"
 latexWidth = 315
 figWidth = latexWidth*px
 Ratio = (138/50)# Specimen ratio
@@ -388,9 +447,9 @@ tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on color
 cBarBins = 3
 resolution_scaling = 1 # Manually scale DPI and text accordingly
 
-fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
-fig.set_figheight(figHeight)
-fig.set_figwidth(figWidth)
+fig = plt.figure(layout="tight", dpi = resolution_scaling*100) # 100 is default size
+# fig.set_figheight(figHeight)
+# fig.set_figwidth(figWidth)
 sampleNum = 0
 
 
@@ -421,91 +480,318 @@ MC24x_plotSamp = np.concatenate((MC24x_Y,MC24x_X), axis = -1)
 # Ex
 ax = plt.subplot(3, 6, 1)
 tmp = np.where(LFC18_headers == 'Ex')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'E$_{x}$', ylab = 'LFC18', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = 'MeC-Macro', cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3)
+ax.set_ylabel('(a)', fontweight='bold', rotation=0, labelpad=15, fontsize=10)
 
 ax = plt.subplot(3, 6, 6+1)
 tmp = np.where(MC24_headers == 'Ex')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MeC-Meso-S/M', cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3)
+ax.set_ylabel('(b)', fontweight='bold', rotation=0, labelpad=15, fontsize=10)
 
 ax = plt.subplot(3, 6, 12+1)
 tmp = np.where(MC24_headers == 'Ex')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24$_{extended}$', cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MeC-Meso-L', cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3)
 ax.set_aspect('equal', 'box')
+ax.set_ylabel('(c)', fontweight='bold', rotation=0, labelpad=15, fontsize=10)
 
 # Ey
 ax = plt.subplot(3, 6, 2)
 tmp = np.where(LFC18_headers == 'Ey')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'E$_{y}$', ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 6+2)
 tmp = np.where(MC24_headers == 'Ey')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
-
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
 ax = plt.subplot(3, 6, 12+2)
 tmp = np.where(MC24_headers == 'Ey')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
 ax.set_aspect('equal', 'box')
 
 # Gxy
 ax = plt.subplot(3, 6, 3)
 tmp = np.where(LFC18_headers == 'Gxy')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = 'G$_{xy}$', ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 6+3)
 tmp = np.where(MC24_headers == 'Gxy')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 12+3)
 tmp = np.where(MC24_headers == 'Gxy')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = 'Stiffness [GPa]', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
 ax.set_aspect('equal', 'box')
 
 # Vf
 ax = plt.subplot(3, 6, 4)
-plt.title('V$_{f}$')
+# plt.title('')
 ax.axis("off")
 
 ax = plt.subplot(3, 6, 6+4)
 tmp = np.where(MC24_headers == 'Vf')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$V_{\mathrm{f}}$', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 12+4)
 tmp = np.where(MC24_headers == 'Vf')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Volume fraction', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$V_{\mathrm{f}}$', cBarBins = 3)
 ax.set_aspect('equal', 'box')
 
 # Cos squared
 ax = plt.subplot(3, 6, 5)
-plt.title('c$_{2}$')
+# plt.title('')
 ax.axis("off")
 
 ax = plt.subplot(3, 6, 6+5)
 tmp = np.where(MC24_headers == 'c2')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'cos$^{2}$(q)', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$c_{2}$', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 12+5)
 tmp = np.where(MC24_headers == 'c2')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'cos$^{2}$(q)', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$c_{2}$', cBarBins = 3)
 ax.set_aspect('equal', 'box')
 
 # FI
 ax = plt.subplot(3, 6, 6)
 tmp = np.where(LFC18_headers == 'FI')[0][0]
-plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = 'FI', ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = '', ylab = None, cbarlab = '$FI$', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 6+6)
 tmp = np.where(MC24_headers == 'FI')[0][0]
-plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$FI$', cBarBins = 3)
 
 ax = plt.subplot(3, 6, 12+6)
 tmp = np.where(MC24_headers == 'FI')[0][0]
-plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = 'Failure Index', cBarBins = 3)
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$FI$', cBarBins = 3)
 ax.set_aspect('equal', 'box')
 
 # Uncomment to save
-plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+# plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.savefig('C:\\Users\\kfh23\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 plt.show()
 
+# %% Plot Meso-L separately
+# PLOT Ex, Ey, Gxy, FI
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixel
+# matplotlib.rcParams["mathtext.fontset"] = 'stix'
+# matplotlib.rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+matplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+# matplotlib.rcParams["mathtext.fontset"] = 'stixsans'
+plt.rcParams["font.size"] = "10"
+latexWidth = 315
+figWidth = latexWidth*px
+Ratio = (138/50)# Specimen ratio
+figHeight = figWidth/1.618 # Golden ratio
+# figHeight = figWidth*Ratio*(2/4) # 2 subplots high, 4 subplots wide 
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="tight", dpi = resolution_scaling*100) # 100 is default size
+# fig.set_figheight(figHeight)
+# fig.set_figwidth(figWidth)
+sampleNum = 0
+
+
+# Prep MC24x sample for plotting
+MC24x_samp = MC24x_samples.take(1)
+MC24x_X = np.zeros((MC24x_sampleShape[0],MC24x_sampleShape[1], len(MC24x_xNames)))
+MC24x_Y = np.zeros((MC24x_sampleShape[0],MC24x_sampleShape[1], len(MC24x_yNames)))
+
+for images, labels in MC24x_samp:
+    for n in range(len(MC24x_xNames)):
+        MC24x_X[:,:,n] = images[:,:,n].numpy()
+    MC24x_Y = labels.numpy()
+
+MC24x_plotSamp = np.concatenate((MC24x_Y,MC24x_X), axis = -1)
+# Ex
+# ax = plt.subplot(1, 1, 1)
+# tmp = np.where(MC24_headers == 'Ex')[0][0]
+# plot_contour(grid = MC24x_grid, samples2D = MC24x_X[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = 'MC24_extended', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+# ax.set_aspect('equal', 'box')
+    # ax = plt.subplot(4, 8, i + 1)
+    # plot_contour(grid = LFC18_grid, samples2D = images[i].numpy(),  ax = ax, xlab = None, ylab = 'LFC18', cbarlab = 'Stiffness [GPA]', cBarBins = 3)
+    # plt.imshow(images[i].numpy().astype("uint8"))
+
+# Create a figure with uneven subplot grid
+fig = plt.figure(layout="tight", dpi=resolution_scaling * 100)
+
+# Define the grid layout
+grid = fig.add_gridspec(1, 6)
+# fig.set_figheight(fig.get_figheight() * 1.5)
+
+# MeC-Macro:
+ax = fig.add_subplot(grid[0, 0])
+tmp = np.where(LFC18_headers == 'Ex')[0][0]
+scaleBarDx = 50/LFC18_sampleShape[1]
+# scaleBarDx = 1
+# scaleBarDx = 50/LFC18_samples2D[sampleNum,:,:,tmp].shape[1] 
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3, scaleBarDx = scaleBarDx)
+
+
+ax = fig.add_subplot(grid[0, 1])
+tmp = np.where(LFC18_headers == 'Ey')[0][0]
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
+
+ax = fig.add_subplot(grid[0, 2])
+tmp = np.where(LFC18_headers == 'Gxy')[0][0]
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
+
+ax = fig.add_subplot(grid[0, 5])
+tmp = np.where(LFC18_headers == 'FI')[0][0]
+plot_contour(grid = LFC18_grid, samples2D = LFC18_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = '', ylab = None, cbarlab = '$F$', cBarBins = 3)
+# fig.text(0, 0.19, '(a)', fontweight='bold', fontsize=12)
+# fig.text(0, 0.19, '(a): MeC-Macro', fontsize=10)
+fig.text(
+  0, 0.5,  # Adjust vertical position based on the row index
+  " ",  # 'a', 'b', 'c', etc.
+  fontsize=10,
+  fontweight='bold',
+  va='center',
+  ha='left',
+)
+plt.savefig('C:\\Users\\kfh23\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DatasetSamples_Macro_v2.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.05)
+plt.show()
+
+
+
+# Add a dotted line between the rows of subplots
+
+# divider_ax = fig.add_subplot(grid[:, :], frame_on=False)
+# divider_ax.axis("off")
+# divider_ax.plot([0, 1], [0.75, 0.75], transform=fig.transFigure, color="grey", linestyle="--", linewidth=0.8)
+
+
+# divider_ax = fig.add_subplot(grid[:, :], frame_on=False)
+# divider_ax.axis("off")
+# divider_ax.plot([0, 1], [0.5, 0.5], transform=fig.transFigure, color="grey", linestyle="--", linewidth=0.8)
+
+#MeC-Meso-S/M:
+
+# Create a figure with uneven subplot grid
+fig = plt.figure(layout="tight", dpi=resolution_scaling * 100)
+
+# Define the grid layout
+grid = fig.add_gridspec(1, 6)
+ax = fig.add_subplot(grid[0, 0])
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+scaleBarDx = 50/MC24_sampleShape[1]
+# scaleBarDx = 1
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3, scaleBarDx = scaleBarDx)
+# fig.text(-0.03, 0.625, '(b)', fontweight='bold', fontsize=12)
+
+ax = fig.add_subplot(grid[0, 1])
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
+
+ax = fig.add_subplot(grid[0, 2])
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp]/1000,  ax = ax, xlab = '', ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
+ax = fig.add_subplot(grid[0, 3])
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$V_{\mathrm{f}}$', cBarBins = 3)
+
+ax = fig.add_subplot(grid[0, 4])
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$c_{2}$', cBarBins = 3)
+
+ax = fig.add_subplot(grid[0, 5])
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24_grid, samples2D = MC24_samples2D[sampleNum,:,:,tmp],  ax = ax, xlab = '', ylab = None, cbarlab = '$F$', cBarBins = 3)
+# fig.text(0, 0.19, '(b): MeC-Meso-S/M', fontsize=10)
+fig.text(
+  0, 0.5,  # Adjust vertical position based on the row index
+  " ",  # 'a', 'b', 'c', etc.
+  fontsize=10,
+  fontweight='bold',
+  va='center',
+  ha='left',
+)
+
+plt.savefig('C:\\Users\\kfh23\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DatasetSamples_Meso-SM_v2.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.05)
+plt.show()
+
+
+
+# MeC-Meso-L:
+# Create a figure with uneven subplot grid
+fig = plt.figure(layout="tight", dpi=resolution_scaling * 100)
+
+# Define the grid layout
+grid = fig.add_gridspec(2, 6)
+
+
+ax = fig.add_subplot(grid[0:1, 0 * 2:(0 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'Ex')[0][0]
+scaleBarDx = 224/MC24x_sampleShape[1]
+
+
+
+# scaleBarDx = 1
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$E_{\mathrm{x}}$ [GPa]', cBarBins = 3, scaleBarDx = scaleBarDx)
+# ax.set_aspect('equal', 'box')
+# fig.text(-0.03, 0.25, '(c)', fontweight='bold', fontsize=12)
+
+ax = fig.add_subplot(grid[0:1, 1 * 2:(1 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'Ey')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$E_{\mathrm{y}}$ [GPa]', cBarBins = 3)
+ax.set_aspect('equal', 'box')
+
+ax = fig.add_subplot(grid[0:1, 2 * 2:(2 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'Gxy')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp]/1000,  ax = ax, xlab = None, ylab = None, cbarlab = '$G_{\mathrm{xy}}$ [GPa]', cBarBins = 3)
+ax.set_aspect('equal', 'box')
+
+ax = fig.add_subplot(grid[1:2, 0 * 2:(0 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'Vf')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$V_{\mathrm{f}}$', cBarBins = 3)
+ax.set_aspect('equal', 'box')
+
+ax = fig.add_subplot(grid[1:2, 1 * 2:(1 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'c2')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$c_{2}$', cBarBins = 3)
+ax.set_aspect('equal', 'box')
+
+ax = fig.add_subplot(grid[1:2, 2 * 2:(2 + 1) * 2])  # Adjusted to span two rows
+tmp = np.where(MC24_headers == 'FI')[0][0]
+plot_contour(grid = MC24x_grid, samples2D = MC24x_plotSamp[:,:,tmp],  ax = ax, xlab = None, ylab = None, cbarlab = '$F$', cBarBins = 3)
+ax.set_aspect('equal', 'box')
+fig.tight_layout(h_pad=-3)
+
+fig.text(
+  0, 0.5,  # Adjust vertical position based on the row index
+  " ",  # 'a', 'b', 'c', etc.
+  fontsize=10,
+  fontweight='bold',
+  va='center',
+  ha='left',
+)
+
+# fig.text(0, 0, '(c): MeC-Meso-L', fontsize=10)
+plt.savefig('C:\\Users\\kfh23\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DatasetSamples_Meso-L_v2.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.05)
+plt.show()
+
+
+# Uncomment to save
+# plt.savefig('DatasetSamples.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+# plt.savefig('C:\\Users\\kfh23\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DatasetSamples_v2.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+# plt.show()
+
+
+# %%
+# Create a grid for plotting the MC24x samples
+
+
+# x = np.linspace(MC24x_sampleShape[0], 1, 224)  # 224 points from 48.75 to 1.25
+# y = np.linspace(MC24x_sampleShape[0], 1, 224)  # 224 points from 148.75 to 1.25
+# MC24x_grid = np.meshgrid(x, y)
+# MC24x_grid = np.stack((MC24x_grid[0],MC24x_grid[1]))
+
+# # Save the grid to the specified path
+# grid_save_path = r"C:\Users\kfh23\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Data\MatLabModelFiles\sampleGrid_224.json"
+# with open(grid_save_path, 'w') as json_file:
+#     json.dump(MC24x_grid.tolist(), json_file)
 
 # %% Compare MC24 with and without constant Vf
 
@@ -751,35 +1037,74 @@ cBarBins = 3
 resolution_scaling = 1 # Manually scale DPI and text accordingly
 
 #%% 1: Distributions before standardisation
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixel
+matplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "8"
+latexWidth = 315
+figWidth = latexWidth*px
+Ratio = (138/50)# Specimen ratio
+figHeight = figWidth/1.618 # Golden ratio
+plt.style.use("seaborn-v0_8-colorblind")
 
+
+from matplotlib.patches import Patch
 def distPlot(df, features):
     fig = plt.figure(layout="tight", dpi = resolution_scaling*100) # 100 is default size
     # fig = plt.figure(dpi = resolution_scaling*100) # 100 is default size
-    fig.set_figheight(figHeight)
-    fig.set_figwidth(figWidth)
+    # fig.set_figheight(figHeight)
+    # fig.set_figwidth(figWidth)
     numplts = len(features)
     dims = [2,int(np.ceil(numplts/2))]
     for i in range(numplts):
         ax = plt.subplot(dims[0],dims[1],i+1)
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
         # sns.histplot(df, x = features[i], kde = True, kde_kws = {"bw_adjust": 2}, hue = 'Dataset',element = 'step',linewidth=0,alpha=0.6)
-        sns.kdeplot(df, x = features[i],bw_adjust=2, hue = 'Dataset',fill=True,common_norm = False)
-        if features[i] == 'Vf':
-             plt.ylim((0,3.3))
+        palette = sns.color_palette("colorblind")
+        sns.kdeplot(df,ax = ax, x=features[i], bw_adjust=2, hue='Dataset', fill=True, common_norm=True, palette={"LFC18": palette[0], "MC24": palette[1]})
+        # if features[i] == 'Vf':
+            #  plt.ylim((0,3.3))
         plt.grid()
         plt.xlabel('')
         plt.ylabel('')
         plt.title(features[i])
-        
+
+        lab = None
+        match features[i]:
+            case 'Ex':
+                lab = '$E_{\mathrm{x}}$'
+            case 'Ey':
+                lab = '$E_{\mathrm{y}}$'
+            case 'Gxy':
+                lab = '$G_{\mathrm{xy}}$'
+            case 'Vf':
+                lab = '$V_{\mathrm{f}}$'
+            case 'c2':
+                lab = '$c_{2}$'
+            case 'FI':
+                lab = '$F$'
+        ax.set_xlabel(lab)
+        ax.set_title(f"({chr(97 + i)})")
+    # h,l = ax.get_legend_handles_labels()
+    # h,l = fig.axes
+    # fig.legend(title='Dataset',labels=np.flip(df['Dataset'].unique()), 
+    #        loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.1))
+    handles = [
+    Patch(facecolor=matplotlib.colors.to_rgba(palette[0], alpha=0.4), edgecolor=palette[0]),  # MeC-Macro (left)
+    Patch(facecolor=matplotlib.colors.to_rgba(palette[1], alpha=0.4), edgecolor=palette[1])   # MeC-Meso-S  (right)
+    ]
+    print(handles)
+    fig.legend(title='Dataset',handles=handles, labels=['MeC-Macro','MeC-Meso-S/M/L'], 
+        loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.07))
+    for ax in fig.axes[:]:
         ax.get_legend().remove()
-    h,l = ax.get_legend_handles_labels()
-    fig.legend(title='Dataset',labels=np.flip(df['Dataset'].unique()), 
-           loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.1))
 
-
+plt.tight_layout()
 # All data points
 distPlot(AllDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
-# plt.savefig('DataDistributions.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.savefig('C:\\Users\\kaspe\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\DataDistributions.pdf', bbox_inches='tight', pad_inches = 0)
 # distPlot(VfVariationDf, features = MC24_headers[MC24_featureIdx+MC24_gtIdx])
 # plt.savefig('DataDistributions_constVf.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
 plt.show()
@@ -901,7 +1226,7 @@ fig.legend(title='Dataset',handles = h,labels=l,
 
 # %% Visualisation with density plot
 
-
+plt.rcParams["font.size"] = "8"
 def densPlot(df, features, groundTruth):
     pearsonLFC18 = np.zeros(len(LFC18_featureIdx)) # Pearson correlation with Failure index
     pearsonLFC18_Pval = np.copy(pearsonLFC18)
@@ -941,24 +1266,49 @@ def densPlot(df, features, groundTruth):
 
     fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
     # fig = plt.figure(dpi = resolution_scaling*100) # 100 is default size
-    fig.set_figheight(figHeight)
-    fig.set_figwidth(figWidth)
+    # fig.set_figheight(figHeight)
+    # fig.set_figwidth(figWidth)
     numplts = len(features)
+    palette = sns.color_palette("colorblind")
     dims = [2,int(np.ceil(numplts/2))]
     for i in range(numplts):
         ax = plt.subplot(dims[0],dims[1],i+1)
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
         # sns.histplot(df, x = features[i], kde = True, kde_kws = {"bw_adjust": 2}, hue = 'Dataset',element = 'step',linewidth=0,alpha=0.6)
         if not (features[i] == 'Vf' or features[i] == 'c2'):
-            sns.histplot(df, x = groundTruth[0], y = features[i], hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/40,np.max(df[features[i]])/40])
+            sns.histplot(df, x = groundTruth[0], y = features[i],thresh=1, hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/32,np.max(df[features[i]])/32],palette = sns.color_palette('colorblind'))
+            # sns.kdeplot(df, x = groundTruth[0], y = features[i], hue = 'Dataset',binwidth = [np.max(df[groundTruth[0]])/40,np.max(df[features[i]])/40])
+            # random_indices = np.random.choice(len(df[df['Dataset']=='LFC18'][groundTruth[0]]), size=1000, replace=False)
+
+            # xdat = np.array(df[df['Dataset']=='LFC18'][groundTruth[0]])[random_indices]
+            # ydat = np.array(df[df['Dataset']=='LFC18'][features[i]])[random_indices]
+            # sns.scatterplot(
+            #     x=xdat, 
+            #     y=ydat, 
+            #     s=1, 
+            #     color=palette[0], 
+            #     # label="Data Points"
+            # )
+            # hist = sns.histplot(
+            #     x=data['Ground Truth'], 
+            #     y=data['Prediction'], 
+            #     bins=100, 
+            #     cbar=True, 
+            #     pthresh=0.1,
+            #     cbar_kws={'label': 'Density'}, 
+            #     cmap="viridis",
+            #     label="Point concentration"
+            # )
+
+
             cmapOrange = ax.collections[1].get_cmap()
-            lgdnhand =  ax.get_legend().legend_handles
+            lgdnhand =  ax.get_legend().legend_handles.copy()
             # for collection in ax.collections:
             #     print(collection)
             #     if isinstance(collection, matplotlib.collections.QuadMesh):
             #         facCol = ax.collections[1].get_cmap()
         else:
-            sns.histplot(df[df['Dataset']=='MC24'], x = groundTruth[0], y = features[i], hue = 'Dataset', binwidth = [np.max(df[df['Dataset']=='MC24'][groundTruth[0]])/30,np.max(df[df['Dataset']=='MC24'][features[i]])/30])
+            sns.histplot(df[df['Dataset']=='MC24'],thresh=1,pthresh=0.00, x = groundTruth[0], y = features[i], hue = 'Dataset', binwidth = [np.max(df[df['Dataset']=='MC24'][groundTruth[0]])/32,np.max(df[df['Dataset']=='MC24'][features[i]])/32],palette = sns.color_palette('colorblind'))
             ax.collections[0].set_cmap(cmapOrange)
             # for han in ax.get_legend_handles_labels():
             #     for hand in han:
@@ -966,24 +1316,350 @@ def densPlot(df, features, groundTruth):
             #             hand.set_facecolor(cmapOrange)
         ax.get_legend().remove()
         plt.grid()
-        plt.xlabel(groundTruth[0], labelpad=-0.5)
-        plt.ylabel(features[i], labelpad=-0.5)
-        plt.title(features[i])
-
-    fig.legend(title = 'Dataset',handles = lgdnhand, labels=np.flip(df['Dataset'].unique()),
-           loc="lower center", ncol=2,bbox_to_anchor=(0.5, -0.15))
+        
+        plt.xlabel('$F$', labelpad=-0.5)
+        lab = None
+        match features[i]:
+            case 'Ex':
+                lab = '$E_{\mathrm{x}}$'
+            case 'Ey':
+                lab = '$E_{\mathrm{y}}$'
+            case 'Gxy':
+                lab = '$G_{\mathrm{xy}}$'
+            case 'Vf':
+                lab = '$V_{\mathrm{f}}$'
+            case 'c2':
+                lab = '$c_{2}$'
+            case 'FI':
+                lab = '$F$'
+        # ax.set_title(lab)
+        plt.ylabel(lab, labelpad=-0.5)
+        ax.set_title(f"({chr(97 + i)})")
+        # plt.title(features[i])
+    palette = sns.color_palette("colorblind")
+    handles = [
+    Patch(facecolor=matplotlib.colors.to_rgba(palette[0], alpha=0.4), edgecolor=palette[0]),  # MeC-Macro (left)
+    Patch(facecolor=matplotlib.colors.to_rgba(palette[1], alpha=0.4), edgecolor=palette[1])   # MeC-Meso-S  (right)
+    ]
+    fig.legend(title='Dataset', handles=handles, labels=['MeC-Macro','MeC-Meso-S/M/L'],
+               loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.1))
     ax6 = plt.subplot(dims[0],dims[1],6) # For plotting correlation coeffs
-    bp = sns.barplot(data=corrDf,x = 'variable',y = 'value', hue = 'Dataset')
+    bp = sns.barplot(data=corrDf,x = 'variable',y = 'value', hue = 'Dataset', palette={"LFC18": palette[0], "MC24": palette[1]})
+    ticklabels = []
+    for ticklab in ax6.get_xticklabels():
+        match ticklab.get_text():
+            case 'Ex':
+                lab = '$E_{\mathrm{x}}$'
+            case 'Ey':
+                lab = '$E_{\mathrm{y}}$'
+            case 'Gxy':
+                lab = '$G_{\mathrm{xy}}$'
+            case 'Vf':
+                lab = '$V_{\mathrm{f}}$'
+            case 'c2':
+                lab = '$c_{2}$'
+            case 'FI':
+                lab = '$F$'
+        ticklabels.append(lab)
+    ax6.set_xticklabels(ticklabels)
+        # ax.set_title(lab)
+    
     plt.grid()
     plt.xlabel('')
     plt.ylabel('Correlation', labelpad=-2)
-    plt.title('Pearson correlation with FI')
+    plt.title('(f)')
     ax6.get_legend().remove()
 
 # All data points
 densPlot(AllDf, features = MC24_headers[MC24_featureIdx], groundTruth = MC24_headers[MC24_gtIdx])
-plt.savefig('CorrelationScatter.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0)
+plt.tight_layout()
+plt.savefig('C:\\Users\\kaspe\\OneDrive\\UNIVERSITY\\YEAR 4\\Individual Project\\Paper\\Figures\\CorrelationScatter.pdf', bbox_inches='tight', pad_inches = 0)
 plt.show()
+
+# %% Plot results from HP optimisation in single barchart
+# resToPlot = pd.read_csv(r"C:\Users\kfh23\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\HP_Optimisation_Results\MC24x_run16\20250909_MC24x_run16_metrics.csv")
+# resToPlot = pd.read_excel(r"C:\Users\kfh23\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\HP_Optimisation_Results\MC24_1000_HP_Op_results\Pre and post optimisation results all dataset.xlsx")
+resToPlot = pd.read_excel(r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\HP_Optimisation_Results\MC24_1000_HP_Op_results\Pre and post optimisation results all dataset.xlsx")
+
+# Reshape the data into long form
+data_long = pd.melt(
+    resToPlot,
+    id_vars=["Dataset", "Stage"],
+    value_vars=[
+        "RMSE Train", "RMSE Train std", "RMSE Val", "RMSE Val std",
+        "NRMSE Train", "NRMSE Train std", "NRMSE Val", "NRMSE Val std",
+        "SSIM Train", "SSIM Train std", "SSIM Val", "SSIM Val std"
+    ],
+    var_name="Metric_Stage",
+    value_name="Value"
+)
+
+# Extract 'Metric' and 'Type' (Mean or Std) from 'Metric_Stage'
+data_long["Metric"] = data_long["Metric_Stage"].apply(lambda x: x.split(" ")[0])
+data_long["Type"] = data_long["Metric_Stage"].apply(lambda x: "std" if "std" in x else "mean")
+data_long["Data"] = data_long["Metric_Stage"].apply(lambda x: "train" if "Train" in x else "val")
+
+# Pivot the data to separate 'mean' and 'std' into columns
+data_long = data_long.pivot_table(
+    index=["Dataset", "Stage", "Metric", "Data"],
+    columns="Type",
+    values="Value",
+    aggfunc="first"
+).reset_index()
+
+# Rename columns for clarity
+data_long = data_long.rename(columns={"mean": "Mean", "std": "Std"})
+# Add rows for "Optimised" values in the MeC-Meso-S dataset and set Mean and Std to NaN
+# for metric in ["NRMSE", "RMSE", "SSIM"]:
+#     data_long = pd.concat([
+#         data_long,
+#         pd.DataFrame({
+#             "Dataset": ["MeC-Meso-S"],
+#             "Stage": ["Optimised"],
+#             "Metric": [metric],
+#             "Data": ["train"],
+#             "Mean": [np.nan],
+#             "Std": [np.nan]
+#         })
+#     ], ignore_index=True)
+#     data_long = pd.concat([
+#         data_long,
+#         pd.DataFrame({
+#             "Dataset": ["MeC-Meso-S"],
+#             "Stage": ["Optimised"],
+#             "Metric": [metric],
+#             "Data": ["val"],
+#             "Mean": [np.nan],
+#             "Std": [np.nan]
+#         })
+#     ], ignore_index=True)
+
+
+RMSEs = data_long[data_long['Metric'] == 'RMSE']
+NRMSEs = data_long[data_long['Metric'] == 'NRMSE']
+SSIMs = data_long[data_long['Metric'] == 'SSIM']
+
+RMSE_palette = {
+'train': '#66D3B3',  # lighter green
+'val': '#029E73',  # base green
+# 'test': '#01523D'  # darker green
+}
+
+NRMSE_palette = {
+'train': '#ffc505',  # lighter orange
+'val': '#d55e00',  # base orange
+# 'test': '#01523D'  # darker green
+}
+
+SSIM_palette = {
+'train': '#66ADD6',  # lighter blue
+'val': '#0173B2',  # base blue
+# 'test': '#01436A'  # darker blue
+}
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "8"
+latexWidth = 315
+figscale = 1
+figWidth = latexWidth*px*figscale
+Ratio = (138/50)# Specimen ratio
+figHeight = 3 * figWidth/1.618 # Golden ratio
+# figHeight = figWidth*Ratio*(2/4) # 2 subplots high, 4 subplots wide 
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="tight", dpi = resolution_scaling*100) # 100 is default size
+# fig = plt.figure(dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+# Create a barplot with error bars
+# plt.figure(figsize=(10, 9))
+# plt.subplot(3, 1, 1)
+
+# ax = sns.catplot(
+#     data=RMSEs,
+#     kind="bar",
+#     x="Stage", 
+#     y="Mean", 
+#     col="Dataset",
+#     hue='Data',
+#     hue_order=['train', 'val'],  # Specify the order of the hue categories
+#     palette=RMSE_palette,
+#     # height=4, aspect=.5,
+#     )
+
+dataset_list = ['MeC-Macro', 'MeC-Meso-S', 'MeC-Meso-M']
+modelList = ['TBDCNet-Macro', 'TBDCNet-Meso-S', 'TBDCNet-Meso-M']
+all_stages = ['Baseline', 'Optimised']  
+fig, axs = plt.subplots(3, 3, sharey='row')  # Share y-axis within each row
+
+# fig.set_figheight(figHeight)
+# fig.set_figwidth(figWidth)
+for plt_idx in range(3):
+    ax = axs[0,plt_idx]
+    sns.barplot(
+        data=RMSEs[RMSEs['Dataset'] == dataset_list[plt_idx]],
+        x="Stage", 
+        y="Mean", 
+        hue='Data',
+        hue_order=['train', 'val'],  # Specify the order of the hue categories
+        palette=RMSE_palette,
+        ax=ax,
+        # order=['Baseline', 'Optimised']  # Ensure Baseline is always on the left
+    )
+    ax.set_xlim(-0.5, len(all_stages) - 0.5) # Force space for the optimised bar even if missing
+    # x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:4]]
+    # y_coords = [p.get_height() for p in ax.patches[:4]]
+    x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:-2]]
+    y_coords = [p.get_height() for p in ax.patches[:-2]]
+    errorvals = RMSEs[RMSEs['Dataset'] == dataset_list[plt_idx]]['Std'].dropna()
+    ax.errorbar(x=x_coords, y=y_coords, yerr=errorvals, fmt="none", c="k")
+
+    ax.set_ylabel('RMSE')
+    ax.set_xlabel('')
+    # ax.set_title(dataset_list[plt_idx], fontsize=10)
+    # ax.set_title(f"({chr(97 + plt_idx)})", fontweight='bold')
+    # ax.set_yticklabels(ax.get_yticklabels(), fontsize=6)
+    ax.set_ylim(np.min(RMSEs['Mean']*0.8), np.max(RMSEs['Mean']*1.1)) 
+    ax.tick_params(axis='y')
+    ax.grid(axis='y', linestyle='--')
+    ax.set_xticklabels(['Baseline\nCNN', modelList[plt_idx]])
+    if plt_idx == 1:
+        ax.legend(title='Data')
+    else:
+        ax.get_legend().remove()
+
+for plt_idx in range(3):
+    ax = axs[1,plt_idx]
+    sns.barplot(
+        data=NRMSEs[NRMSEs['Dataset'] == dataset_list[plt_idx]],
+        x="Stage", 
+        y="Mean", 
+        hue='Data',
+        hue_order=['train', 'val'],  # Specify the order of the hue categories
+        palette=NRMSE_palette,
+        ax=ax
+    )
+    ax.set_xlim(-0.5, len(all_stages) - 0.5) # Force space for the optimised bar even if missing
+    # x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:4]]
+    # y_coords = [p.get_height() for p in ax.patches[:4]]
+    x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:-2]]
+    y_coords = [p.get_height() for p in ax.patches[:-2]]
+    errorvals = NRMSEs[NRMSEs['Dataset'] == dataset_list[plt_idx]]['Std'].dropna()
+    ax.errorbar(x=x_coords, y=y_coords, yerr=errorvals, fmt="none", c="k")
+
+    ax.set_ylabel('NRMSE')
+    ax.set_xlabel('')
+    # ax.set_title(dataset_list[plt_idx], fontsize=6)
+    # ax.set_yticklabels(ax.get_yticklabels(), fontsize=6)
+    ax.set_ylim(np.min(NRMSEs['Mean']*0.8), np.max(NRMSEs['Mean']*1.15)) 
+    ax.tick_params(axis='y')
+    ax.grid(axis='y', linestyle='--')
+    ax.set_xticklabels(['Baseline\nCNN', modelList[plt_idx]])
+    if plt_idx == 1:
+        ax.legend(title='Data')
+    else:
+        ax.get_legend().remove()
+
+for plt_idx in range(3):
+    ax = axs[2,plt_idx]
+    sns.barplot(
+        data=SSIMs[SSIMs['Dataset'] == dataset_list[plt_idx]],
+        x="Stage", 
+        y="Mean", 
+        hue='Data',
+        hue_order=['train', 'val'],  # Specify the order of the hue categories
+        palette=SSIM_palette,
+        ax=ax
+    )
+    ax.set_xlim(-0.5, len(all_stages) - 0.5) # Force space for the optimised bar even if missing
+    # x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:4]]
+    # y_coords = [p.get_height() for p in ax.patches[:4]]
+    x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches[:-2]]
+    y_coords = [p.get_height() for p in ax.patches[:-2]]
+    errorvals = SSIMs[SSIMs['Dataset'] == dataset_list[plt_idx]]['Std'].dropna()
+    ax.errorbar(x=x_coords, y=y_coords, yerr=errorvals, fmt="none", c="k")
+
+    ax.set_ylabel('SSIM')
+    ax.set_xlabel('')
+    # ax.set_title(dataset_list[plt_idx], fontsize=6)
+    # ax.set_yticklabels(ax.get_yticklabels(), fontsize=6)
+    ax.set_ylim(np.min(SSIMs['Mean']*0.95), 1) 
+    ax.tick_params(axis='y')
+    ax.grid(axis='y', linestyle='--')
+    ax.set_xticklabels(['Baseline\nCNN', modelList[plt_idx]])
+    if plt_idx == 1:
+        ax.legend(title='Data')
+    else:
+        ax.get_legend().remove()
+
+
+plt.tight_layout()
+# plt.show()
+# Save the figure as a high-resolution PDF
+# output_pdf_path = r"C:\Users\kfh23\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\Figures\PrePost_HPOpti_results.pdf"
+# output_pdf_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\Figures\PrePost_HPOpti_results_v2.pdf"
+output_pdf_path = r"C:\Users\kaspe\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\Figures\PrePost_HPOpti_results_v3.pdf"
+plt.savefig(output_pdf_path, format='pdf', bbox_inches='tight', dpi=300)
+print(f"Figure saved to {output_pdf_path}")
+plt.show()
+
+# ax = sns.barplot(
+#     # data=RMSEs[RMSEs['Data']=='test'],
+#     data=RMSEs,
+#     x='type',
+#     y='Mean',
+#     hue='Data',
+#     hue_order=['train', 'val', 'test'],  # Specify the order of the hue categories
+#     palette=RMSE_palette
+# )
+
+# x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax.patches]
+# y_coords = [p.get_height() for p in ax.patches]
+
+
+
+# plt.subplot(2, 1, 2)
+# ax2 = sns.barplot(
+#     data=SSIMs,
+#     x='type',
+#     y='Mean',
+#     hue='Data',
+#     hue_order=['train', 'val', 'test'],  # Specify the order of the hue categories
+#     palette=SSIM_palette
+# )
+# x_coords = [p.get_x() + 0.5 * p.get_width() for p in ax2.patches[:-3]]
+# y_coords = [p.get_height() for p in ax2.patches[:-3]]
+# # ax.errorbar(x=x_coords, y=y_coords, yerr=RMSEs[RMSEs['Data']=='test']['Std'], fmt="none", c="k")
+# ax2.errorbar(x=x_coords, y=y_coords, yerr=SSIMs['Std'], fmt="none", c="k")
+# ax2.set_ylim(0.5, None)  # Start y-axis at 0
+# ax2.set_xticklabels(ax2.get_xticklabels(),rotation=90, fontsize=12, ha='center',va = 'top')
+# ax2.set_yticklabels(ax2.get_yticklabels(), fontsize=10)
+# ax2.set_ylabel('SSIM', fontsize=12)
+# ax2.set_xlabel('', fontsize=12)
+# ax2.legend(
+#     title='Data',
+#     loc='upper left',
+#     # bbox_to_anchor=(1, 1),
+#     fontsize=10,
+#     title_fontsize=10
+# )
+
+# # ax2.set_xticklabels(ax2.get_xticklabels(), fontsize=10)
+# ax.set_xticklabels([''] * len(ax.get_xticks()), fontsize=1)  # Remove xtick labels on ax
+# ax2.grid(axis='y', linestyle='--')
+# plt.tight_layout()
+
+# # Save the figure as a high-resolution PDF
+# output_pdf_path = r"C:\Users\kfh23\OneDrive\UNIVERSITY\YEAR 4\Individual Project\Paper\Figures\high_resolution_figure.pdf"
+# plt.savefig(output_pdf_path, format='pdf', bbox_inches='tight', dpi=300)
+# print(f"Figure saved to {output_pdf_path}")
+
+# plt.show()
 
 # scatPlot(AllDf, features = MC24_headers[-2:], groundTruth = MC24_headers[MC24_gtIdx])
 # %% Visualisation with density plot of constant Vf
@@ -2090,7 +2766,14 @@ plt.show()
 
 
 # %% FIgure sfor showing number of models to train to do gridsearch
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib
+import numpy as np
+import seaborn as sns
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter, LogLocator
 plt.style.use("seaborn-v0_8-colorblind")
+
 
 matplotlib.rcParams.update(matplotlib.rcParamsDefault)
 px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
@@ -2109,7 +2792,7 @@ fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is de
 fig.set_figheight(figHeight)
 fig.set_figwidth(figWidth)
 
-HP_Nums = pd.DataFrame(data = pd.Series(data={'T/V':3,'Batch':6,'Kernel':7,'Optimizer':3,'Act.':7,'Loss':3,'Dropout':7,'LR':5,'LR decay':4,'Pooling':2,'B Norm.':2,'Depth':6,'D Aug.':2,'Skip':2,'Scaling':2,'Dec. act':2,'Epsilon':7}))
+HP_Nums = pd.DataFrame(data = pd.Series(data={'T/V':3,'Batch':7,'Kernel':7,'Optimizer':3,'Act':7,'Loss':3,'Dropout':7,'LR':5,'LR decay':4,'Pooling':2,'B Norm':2,'Depth':5,'D Aug':2,'Skip':2,'Dec act':2,'Epsilon':7, 'Downsamp':2, 'Filter dim':4}))
 # HP_Nums = pd.DataFrame(data = pd.Series(data={'Train-val split':3,'Batch Size':6,'Kernel size':7,'Optimizer':3,'Activation func.':7,'Loss':3,'Dropout':7,'Initial LR':5,'LR decay':4,'Max pooling':2,'Batch norm.':2,'Model depth':6,'Data aug':2,'Skip connections':2,'Scaling':2,'Decoder activation':2,'Epsilon':7}))
 HP_Nums = HP_Nums.rename(columns={0: "Number of values"})
 HP_Nums['Cumulative prod.'] = np.cumprod(HP_Nums)
@@ -2125,18 +2808,26 @@ ax.set_xticklabels(
 ax.tick_params(axis='x', labelsize=8)
 # plt.grid()
 
-ax2 = ax.twinx()
-lp = sns.lineplot(data=HP_Nums,ax = ax2, x = 'Hyperparameter',y = "Cumulative prod." ,color="#DE8F05")
-ax2.set_yscale('log')
+# ax2 = ax.twinx()
+# lp = sns.lineplot(data=HP_Nums,ax = ax2, x = 'Hyperparameter',y = "Cumulative prod." ,color="#DE8F05")
+# ax2.set_yscale('log')
 
-ax.set_ylabel('Individual values',color = 'black',bbox=dict(facecolor="#0173B2", edgecolor="#0173B2", pad=0.2, alpha=0.5, boxstyle = 'Round'))
-ax2.set_ylabel('Cumulative prod.',bbox=dict(facecolor="#DE8F05", edgecolor="#DE8F05", pad=0.2, alpha=0.5, boxstyle = 'Round'))
+# ax.set_ylabel('Number of options',color = 'black',bbox=dict(facecolor="#0173B2", edgecolor="#0173B2", pad=0.2, alpha=0.5, boxstyle = 'Round'))
+ax.set_ylabel('Number of options',color = 'black')
+# ax2.set_ylabel('Cumulative prod.',bbox=dict(facecolor="#DE8F05", edgecolor="#DE8F05", pad=0.2, alpha=0.5, boxstyle = 'Round'))
 # ax2.grid(None)
 ax.grid(True)
+# Left y-axis: ticks every 1
+ax.yaxis.set_major_locator(MultipleLocator(2))
+ax.yaxis.set_major_formatter(FormatStrFormatter('%d'))
+
+# Right y-axis: ticks every 5
+# ax2.set_yticks([1e3, 1e6, 1e9])
+# ax2.yaxis.set_major_formatter(FormatStrFormatter('%d'))
 
     
 
-plt.savefig('GridSearch_NumModels.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.2)
+plt.savefig('GridSearch_NumModels_simple.png', dpi=400, bbox_inches='tight', pad_inches = 0.2)
 plt.show()
 
 
@@ -2381,3 +3072,76 @@ for i in samples:
 
 plt.savefig('Final_model_examples_abs.pdf', dpi=fig.dpi, bbox_inches='tight', pad_inches = 0.2)
 plt.show()
+
+# %% Comparison of SSIM RMSE and std of 2 cross-validations
+# Define data structures for baseline and optimised models
+import numpy as np
+import matplotlib.pyplot as plt
+baseline_metrics = {
+    "Train SSIM": {"mean": 0.8348, "std": 0.0316},
+    "Val SSIM": {"mean": 0.7372, "std": 0.0201},
+    "Train RMSE": {"mean": 0.1057, "std": 0.0137},
+    "Val RMSE": {"mean": 0.1651, "std": 0.0062}
+}
+
+optimised_metrics = {
+    "Train SSIM": {"mean": 0.8742, "std": 0.0141},
+    "Val SSIM": {"mean": 0.8526, "std": 0.0127},
+    "Train RMSE": {"mean": 0.1168, "std": 0.0057},
+    "Val RMSE": {"mean": 0.1328, "std": 0.0046}
+}
+
+# Prepare data for plotting
+metrics = ["Train SSIM", "Val SSIM", "Train RMSE", "Val RMSE"]
+baseline_means = [baseline_metrics[m]["mean"] for m in metrics]
+baseline_stds = [baseline_metrics[m]["std"] for m in metrics]
+optimised_means = [optimised_metrics[m]["mean"] for m in metrics]
+optimised_stds = [optimised_metrics[m]["std"] for m in metrics]
+
+
+matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+px = 1/plt.rcParams['figure.dpi']  # Inches per pixelmatplotlib.rcParams["font.family"] = "Arial"
+matplotlib.rcParams['axes.linewidth'] = 0.25
+plt.rc('axes', axisbelow=True)
+plt.rcParams["font.size"] = "6"
+latexWidth = 315
+figWidth = latexWidth*px
+# Ratio = (138/50)# Specimen ratio
+Ratio = 1.41428571429 # A4 paper ratio
+# figHeight = Ratio*figWidth/1.618 # Golden ratio
+figHeight = Ratio*figWidth
+tick_locator = matplotlib.ticker.MaxNLocator(nbins=3) # Number of ticks on colorbars
+cBarBins = 3
+resolution_scaling = 1 # Manually scale DPI and text accordingly
+
+fig = plt.figure(layout="constrained", dpi = resolution_scaling*100) # 100 is default size
+fig.set_figheight(figHeight)
+fig.set_figwidth(figWidth)
+
+
+x = np.arange(len(metrics))
+width = 0.35
+
+plt.style.use("seaborn-v0_8-colorblind")
+fig, ax = plt.subplots(figsize=(7,4), dpi=150)
+rects1 = ax.bar(x - width/2, baseline_means, width, yerr=baseline_stds, label='Baseline', capsize=5, color="#0173B2")
+rects2 = ax.bar(x + width/2, optimised_means, width, yerr=optimised_stds, label='Optimised', capsize=5, color="#DE8F05")
+
+ax.set_ylabel('Metric Value')
+ax.set_xticks(x)
+ax.set_xticklabels(metrics, rotation=20)
+ax.set_title('Model Performance: Baseline vs Optimised')
+ax.legend()
+
+# Annotate improvement
+for i in range(len(metrics)):
+    improvement = optimised_means[i] - baseline_means[i]
+    if "SSIM" in metrics[i]:
+        txt = f"+{improvement:.3f}"
+    else:
+        txt = f"{improvement:.3f}"
+    ax.text(x[i], max(baseline_means[i], optimised_means[i]) + 0.01, txt, ha='center', va='bottom', fontsize=9, color='black')
+
+plt.tight_layout()
+plt.show()
+

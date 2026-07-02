@@ -4,8 +4,8 @@ import os
 import shutil
 from datetime import datetime
 
-def copy_and_rename_folder(src_folder, src_python_folder, dest_folder_names, num_jobs_list, datasetNames, crossValidation, jobDetails, jobParameters):
-    for name, num_jobs, dataset, use_cross_validation, jobDetails, jobParameters in zip(dest_folder_names, num_jobs_list, datasetNames, crossValidation, jobDetails, jobParameters):
+def copy_and_rename_folder(src_folder, src_python_folder, dest_folder_names, num_jobs_list, datasetNames,gpuFlag,extraMemory, crossValidation, jobDetails, jobParameters):
+    for name, num_jobs, dataset, useGPU, use_extra_memory, use_cross_validation, jobDetails, jobParameters in zip(dest_folder_names, num_jobs_list, datasetNames, gpuFlag, extraMemory, crossValidation, jobDetails, jobParameters):
         # Create the destination folder in the same folder as the src folder
         dest_folder = os.path.join(os.path.dirname(src_folder), name)
         print(dest_folder)
@@ -30,6 +30,12 @@ def copy_and_rename_folder(src_folder, src_python_folder, dest_folder_names, num
                         for line in lines:
                             if "jobName=TEMPLATE" in line:
                                 line = line.replace("jobName=TEMPLATE", f"jobName={name}")
+                            if "#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1" in line:
+                                if not useGPU:
+                                    if use_extra_memory:
+                                        line = line.replace("#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1", "#PBS -l select=1:ncpus=4:mem=128gb")
+                                    else:
+                                        line = line.replace("#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1", "#PBS -l select=1:ncpus=4:mem=64gb")
                             if "#PBS -J 1-TEMPLATE_NUM_JOBS" in line:
                                 line = line.replace("#PBS -J 1-TEMPLATE_NUM_JOBS", f"#PBS -J 1-{num_jobs}")
                             if "python3 $HOME/IndividualProject/CNNTraining/$jobName/CrossValidation.py" in line:
@@ -108,8 +114,25 @@ def copy_and_rename_folder(src_folder, src_python_folder, dest_folder_names, num
                     os.rename(old_file_path, new_file_path)
 # Example usage
 # template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE"  # Replace with the path to the folder you want to copy
-template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run2"  # Another run of everything but this time with 4-layer deep models
-runName = '_run2'
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run2"  # Another run of everything but this time with 4-layer deep models
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run3"  # Another run of everything but this time with downsampling by a factor 2 in every block
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run4"  # run4 with the best options for each dataset
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run5"  # run5 is run4 redo for LFC18 with relu instead of tanh
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run6"  # run6 is redo of baseline sweep using correct shuffling to avoid data leakage
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_run7"  # run7 is redo of baseline sweep (only LFC18 and MC24) using correct shuffling to avoid data leakage
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_LFC18_run8"  # run8 is pseudo-optimal models after 1 sweep
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24_run8"  # run8 is pseudo-optimal models after 1 sweep
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24_run9"  # run9 is run8 but with MC24_1000, MC24_ConstVf, MC24_1000_ConstVf datasets
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24_run10"  # run10 is baseline sweep (LFC18 settings) but with 10x lower learning rate, and 0.5 filterScale
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24_run11"  # run11 is baseline sweep (LFC18 settings) but with 10x lower learning rate, and 0.5 filterScale, 0.2 valSize
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24_run12"  # run12 is sweep of MC24_1000 using learning from what could be the issues with MC24 - attempt to quickly find optimum so I can continue
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24x_run13"  # run13 is first run of MC24x on CPU with more ram and walltime to attempt to get some results before the conference
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24x_run14"  # run14 is first run of MC24x on GPU  to attempt to get some results before the conference
+# template_folder = r"\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining\TEMPLATE_MC24x_run15"  # run15 is first run of MC24x on CPU with more walltime  to attempt to get some results before the conference
+
+runName = '_run15'
+
+
 
 code_dir = os.path.dirname(os.path.abspath(__file__))
 while os.path.basename(code_dir) != "Individual Project":
@@ -128,11 +151,14 @@ jobNames = ["trainValSplit",
             "lrDecay", 
             'maxPool', 
             "batchNorm", 
-            # "modelDepth", 
+            "modelDepth", 
             "dataAug", 
             "skinConnections", 
             "decoderAct", 
-            "epsilon"]  # sweeping job names
+            "epsilon",
+            "downSample",
+            "filterScale",
+            ]  # sweeping job names
 
 jobNames = [s + runName for s in jobNames]
 num_jobs_list = [3,             # trainValSplit
@@ -146,11 +172,14 @@ num_jobs_list = [3,             # trainValSplit
                  4,      # lrDecay
                  2,          # maxPool
                  2,              # batchNorm
-                #  6,          # modelDepth
+                 5  ,          # modelDepth
+                # 4  ,          # modelDepth
                  2,          # dataAug
                  2,              # skinConnections
                  2,              # decoderAct
                  7,      # epsilon
+                 2,              # downSample
+                 4,              # filterScale
                  ]  
 # Replace with the number of jobs for each project
 
@@ -167,34 +196,51 @@ jobDetails = [
     ["lr_decay_rate"],  # lrDecay
     ["pooling"],  # maxPool
     ["batchNorm"],  # batchNorm
-    # ["layer2", "layer3", "layer4", "layer5", "layer6"],  # modelDepth
+    ["layer2", "layer3", "layer4", "layer5"],  # modelDepth
     ["dsAugmentation"],  # dataAug
     ["skipConnections"],  # skinConnections
     ["ActivationUp"],  # decoderAct
     ["epsilon"],  # epsilon
+    ["downSample"],  # downSample
+    ["filterScale"],  # filterScale
 ]
 # Set parameters for each job (the param is the one in jobDetails)
 jobParameters = [
     [0.1, 0.2, 0.3],  # trainValSplit
-    [1, 2, 4, 8, 16, 32, 64],  # batchSize
-    [1, 2, 3, 4, 5, 6, 7],  # kernelSize
+    # [1, 2, 4, 8, 16, 32, 64],  # batchSize
+    [4, 8, 16, 32, 64, 128, 256],  # batchSize
+    # [1, 2, 3, 4, 5, 6, 7],  # kernelSize
+    [3, 4, 5, 6, 7, 8, 9],  # kernelSize
     ["Adam", "Nadam", "Adadelta"],  # optimizer
     ["relu", "tanh", "softplus", "elu", "leaky_relu", "silu", "gelu"],  # activationFunction
     ["MSE", "MAE", "Custom"],  # loss
     [0, 0.1, 0.15, 0.2, 0.25, 0.3, 0.5],  # dropout
-    [0.0001, 0.0005, 0.001, 0.005, 0.01],  # initialLr
-    [1, 0.5, 0.1, 0.01],  # lrDecay
+    # [0.0001, 0.0005, 0.001, 0.005, 0.01],  # initialLr
+    [0.00001, 0.00005, 0.0001, 0.0005, 0.001],  # initialLr
+    # [1, 0.5, 0.1, 0.01],  # lrDecay
+    [1, 0.1, 0.01, 0.001],  # lrDecay
     [1, 0],  # maxPool
     [1, 0],  # batchNorm
-    # [1, 2, 3, 4, 5, 6],  # modelDepth
+    [1, 2, 3, 4, 5],  # modelDepth
+    # [1, 2, 3, 4],  # modelDepth
     [1, 0],  # dataAug
     [1, 0],  # skinConnections
     [1, 0],  # decoderAct
     [1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],  # epsilon
+    [1, 0],  # downSample
+    [1, 0.75, 0.5, 0.25],  # filterScale
 ]
 
 # Formate automatically
-datasetNames = ["LFC18", "MC24", "MC24x"]  # Replace with the dataset names for each project
+# datasetNames = ["LFC18", "MC24", "MC24x"]  # Replace with the dataset names for each project
+# datasetNames = ["LFC18", "MC24"]  # Replace with the dataset names for each project
+datasetNames = ["MC24x"]  # Replace with the dataset names for each project
+# datasetNames = ["MC24_1000","MC24_ConstVf","MC24_1000_ConstVf"]  # Replace with the dataset names for each project
+
+
+# gpuFlag = [False, False, True]  # Whether to use GPU for each dataset
+# gpuFlag = [False, False]  # Whether to use GPU for each dataset
+gpuFlag = [False]  # Whether to use GPU for each dataset
 
 jobNames = jobNames*len(datasetNames)  # Repeat the job names for each dataset
 jobDetails = jobDetails*len(datasetNames) # Repeat the job details for each job
@@ -202,13 +248,14 @@ jobParameters = jobParameters*len(datasetNames)  # Repeat the job parameters for
 num_jobs_list = num_jobs_list*len(datasetNames)  # Repeat the number of jobs for each dataset
 
 datasetNames = [i for i in datasetNames for _ in range(int(len(jobNames)/len(datasetNames)) )] # Repeat the dataset names for each job
-
+gpuFlag = [i for i in gpuFlag for _ in range(int(len(jobNames)/len(gpuFlag)) )]
 
 # Reformat the job names to include the date and dataset
 today_date = datetime.now().strftime("%Y%m%d")
 jobName_list = [f"{today_date}_{dataset}_{job}" for dataset, job in zip(datasetNames, jobNames)]
 
 crossValidation = [False for i in jobName_list]  # Define which script to call for each project
+extraMemory = [True for i in jobName_list]  # Define which script to call for each project
 
-
-copy_and_rename_folder(template_folder, source_python_folder, jobName_list, num_jobs_list, datasetNames, crossValidation, jobDetails, jobParameters)
+copy_and_rename_folder(template_folder, source_python_folder, jobName_list, num_jobs_list, datasetNames, gpuFlag,extraMemory, crossValidation, jobDetails, jobParameters)
+# %%

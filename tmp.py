@@ -7,14 +7,14 @@ def find_folders_with_date(path, date):
     # for root, dirs, files in os.walk(path):
     for dirs in os.listdir(path):
         print(dirs)
-        if date in dirs:
+        if date in dirs and "TEMPLATE" not in dirs:
             matching_folders.append(os.path.join(path, dirs))
                 
     return matching_folders
 
 # Example usage
 path_to_search = r'\\rds.imperial.ac.uk\rds\user\kfh23\home\IndividualProject\CNNTraining'
-date_to_find = "20250512"
+date_to_find = "run15"
 folders = find_folders_with_date(path_to_search, date_to_find)
 # %%
 # Generate output for spreadsheet
@@ -34,3 +34,5 @@ for folder in folders:
 
 # Print output
 print("\n\n".join(output))
+
+# %%
