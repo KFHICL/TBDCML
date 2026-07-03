@@ -1,0 +1,7 @@
+# Python bytecode cache
+__pycache__/
+*.py[cod]
+
+# Local training checkpoints produced by running BenchMarks.py/CrossValidation.py/test.py locally
+trainingCheckpoints/
+localResults/

@@ -6,6 +6,8 @@ the impact of modelling choices and data characteristics.
 
 ### Scripts
 
+Shared workflow code now lives in `tbdcml_workflow/`. The main scripts import from that package so the dataset setup, sample loading, split helpers, loss functions, backbone wrappers, custom CNN/U-Net builders, and model-selection/compile orchestration stay consistent across benchmark, cross-validation, and local testing runs.
+
 1. MultiDimTBDCNet HPC tuning.py: The main model defnition and training script
 to be used in hyperparameter sweeps on the HPC. The script is launched on the HPC and
 reads the training data and sweep definitions placed using the folder structure defined
@@ -21,8 +23,7 @@ this script.
 
 3. CrossValidation.py: Used to define and train model folds using the k-fold crossvalidation
 routine. By default, k=10. The script reads the sweep definition csv file in
-the same way as the MultiDimTBDCNet HPC tuning script, and is also written to run
-on the HPC.
+the same way as the benchmark script, and is also written to run on the HPC.
 
 4. Comparemodels.py: Used to create visualisation figures for model hyperparameter
 sweeps. Early in the script the path to the local hyperparameter sweep results folder
@@ -39,9 +40,9 @@ can be defined. The script is called with by passing the jobname as the argument
 the repetition you would like to summarise (1-indexed) as the argument ”-rp”, and the index of the model as defined by the sweep definition (1-indexed) as the argument ”-i”.
 An example call could be py SummariseModel.py -j CrossValidation2808 -rp 1 -i 1.
 
-6. test.py: Used to test model training locally. Is effectively the same code as the MultiDimTBDCNet
-HPC tuning script, but runs locally using a sweep definition csv file
-placed in the same folder as the script.
+6. test.py: Used to test model training locally. It shares the same workflow helpers as the
+HPC scripts, but runs locally using a sweep definition csv file placed in the same folder as
+the script.
 
 7. FullyConnectedNN.py: Script written to locally train and evaluate a fully/densely
 connected NN model (FFNN in the thesis) using a sweep definition placed in the same
