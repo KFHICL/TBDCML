@@ -1,0 +1,10 @@
+{
+  "dataset": "MC24x",
+  "mc24_features": "All",
+  "active_params": null,
+  "fixed_params": {"Epochs": 1000, "testSize": 0.0, "type": "default"},
+  "batch_size_choices": [32, 64, 128, 256],
+  "max_model_depth": 4,
+  "n_repeats": 1,
+  "save_models": false
+}

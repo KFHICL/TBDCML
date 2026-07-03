@@ -84,23 +84,36 @@ seed_everything(seed)
 #####################################################################
 # Formatting and settings done automatically
 #####################################################################
-# Add arguments for parallel running and training of several different models 
+# Add arguments for parallel running and training of several different models
 argParser = argparse.ArgumentParser()
 argParser.add_argument("-p", "--parallel", help="Index for parallel running on HPC") # parameter to allow parallel running on the HPC
 argParser.add_argument("-j", "--jobname", help="Job name") # Name of job passed when calling script
+argParser.add_argument("--params-file", help=(
+    "Path to a JSON hyperparameter dict to confirm via k-fold CV, e.g. "
+    "best_params.json from optuna_local.py or a parameters_<jn>_t<trial>.json "
+    "from BenchMarks_Optuna.py. If omitted, falls back to the old behaviour "
+    "of reading row 1 of sweep_definition_<jobname>.csv."
+))
 args = argParser.parse_args()
 sweepIdx = 1
 kFold = int(args.parallel)
 
-# Sweep definition containing hyperparameters
-sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file, one for all repetitions hence [:-2]
-print(os.getcwd())
-print(sweepPath)
-os.listdir(os.getcwd())
+if args.params_file:
+    # Optuna-driven workflow: confirm one already-chosen configuration.
+    print(f"Loading hyperparameters from {args.params_file}")
+    with open(args.params_file) as f:
+        params = json.load(f)
+else:
+    # Legacy workflow: row 1 of the sweep definition CSV is always the
+    # configuration being cross-validated (see module docstring).
+    sweepPath = 'sweep_definition_{jn}.csv'.format(jn=args.jobname[:-2]) # Name of sweep definition file, one for all repetitions hence [:-2]
+    print(os.getcwd())
+    print(sweepPath)
+    os.listdir(os.getcwd())
 
-sweep_params = pd.read_csv(sweepPath)
-sweep_params = sweep_params.set_index('Index')
-params = sweep_params.loc[sweepIdx]
+    sweep_params = pd.read_csv(sweepPath)
+    sweep_params = sweep_params.set_index('Index')
+    params = sweep_params.loc[sweepIdx]
 
 timeStamp = datetime.datetime.now().strftime("%Y%m%d%H%M") # Not currently used
 histOutName = 'trainHist_{jn}_{num}.json'.format(jn=args.jobname, num = args.parallel) # Training history file
@@ -468,7 +481,9 @@ with open(histOutPath, 'w') as f: # Dump data to json file at specified path
     json.dump(trainingHist, f, indent=2)
 
 with open(paramOutPath, 'w') as f: # Dump data to json file at specified path
-    json.dump(params.to_json(), f, indent=2)
+    # `params` is a pandas Series when read from the legacy sweep CSV, or a
+    # plain dict when loaded via --params-file (Optuna workflow).
+    json.dump(params.to_dict() if hasattr(params, "to_dict") else params, f, indent=2)
 
 with open(resultpath, 'w') as f: # Dump data to json file at specified path
     json.dump(results.to_json(), f, indent=2)
